@@ -3,6 +3,7 @@ import { ApiError, createSession, fetchCatalog, isCreatedSession, isSessionReady
 import { PcmPlayer, PcmRecorder } from './audio';
 import { applyTurnEvent, interruptTurns, isCurrentSnapshot, restoreTurns, shouldApplyTurnEvent } from './session-state';
 import { localErrorCode } from './client-state';
+import { VoiceCallStart } from './voice-call-start';
 import type { ActionPreview, CallPhase, CatalogItem, ConnectionStatus, CreatedSession, RestoredSession, ServerEvent, Turn } from './types';
 
 const STORAGE_KEY = 'voice-router-session';
@@ -40,6 +41,8 @@ export function useVoiceSession() {
   const [micMode, setMicMode] = useState<'hold' | 'auto'>('hold');
   const [silenceMs, setSilenceMs] = useState(1500);
   const [speechThreshold, setSpeechThreshold] = useState(0.025);
+  const [voiceStarting, setVoiceStarting] = useState(false);
+  const callStartRef = useRef(new VoiceCallStart());
   const sessionRef = useRef<CreatedSession | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<PcmRecorder | null>(null);
@@ -57,6 +60,11 @@ export function useVoiceSession() {
   const reconnectCountRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+
+  const cancelVoiceStart = useCallback(() => {
+    callStartRef.current.cancel();
+    setVoiceStarting(false);
+  }, []);
 
   const updateTurns = useCallback((update: (current: Turn[]) => Turn[]) => {
     const next = update(turnsRef.current);
@@ -94,9 +102,10 @@ export function useVoiceSession() {
     // A new socket can acknowledge the same seq seen in its preceding snapshot.
     if (event.type === 'session.ready') {
       if (!sessionRef.current || !isSessionReadyFor(event, sessionRef.current)) {
-        setError('invalid_event'); socketRef.current?.close(); return;
+        cancelVoiceStart(); setError('invalid_event'); socketRef.current?.close(); return;
       }
       lastSeqRef.current = Math.max(lastSeqRef.current, event.seq);
+      callStartRef.current.ready(epochRef.current);
       setConnection('ready');
       setError(current => current === 'disconnected' || current === 'reconnect_failed' ? '' : current);
       return;
@@ -106,6 +115,7 @@ export function useVoiceSession() {
     const id = event.turn_id;
     const payload = event.payload;
     if (event.type === 'error' && !id) {
+      cancelVoiceStart();
       setError(String(payload.code));
       if (payload.recoverable === false || activeTurnRef.current) socketRef.current?.close();
       return;
@@ -130,6 +140,7 @@ export function useVoiceSession() {
       reconcileConfirmation(id);
     }
     if (event.type === 'error') {
+      cancelVoiceStart();
       setError(String(payload.code));
       if (payload.code !== 'tts_unavailable' && activeTurnRef.current === id) {
         activeTurnRef.current = null;
@@ -141,7 +152,7 @@ export function useVoiceSession() {
       }
       if (payload.recoverable === false) socketRef.current?.close();
     }
-  }, [cancelRecording, reconcileConfirmation, updateTurns]);
+  }, [cancelRecording, cancelVoiceStart, reconcileConfirmation, updateTurns]);
 
   const openSocket = useCallback((created: CreatedSession, epoch: number) => {
     if (epoch !== epochRef.current) return;
@@ -181,7 +192,7 @@ export function useVoiceSession() {
       lastActivityRef.current = performance.now();
       if (typeof message.data === 'string') {
         const event = parseServerEvent(message.data);
-        if (!event) { setError('invalid_event'); socket.close(); return; }
+        if (!event) { cancelVoiceStart(); setError('invalid_event'); socket.close(); return; }
         if (event.type === 'session.ready') {
           clearTimeout(readyTimeout);
           clearTimeout(stableTimer);
@@ -201,6 +212,7 @@ export function useVoiceSession() {
       clearTimeout(readyTimeout);
       clearTimeout(stableTimer);
       if (!isCurrent()) return;
+      cancelVoiceStart();
       socketRef.current = null;
       setConnection('reconnecting');
       setPhase('idle');
@@ -213,9 +225,10 @@ export function useVoiceSession() {
       scheduleReconnect();
     };
     socket.onerror = () => { /* onclose handles bounded recovery. */ };
-  }, [applySnapshot, cancelRecording, handleServerEvent, updateTurns]);
+  }, [applySnapshot, cancelRecording, cancelVoiceStart, handleServerEvent, updateTurns]);
 
   const endCall = useCallback(() => {
+    cancelVoiceStart();
     epochRef.current += 1;
     requestRef.current?.abort();
     requestRef.current = new AbortController();
@@ -235,7 +248,7 @@ export function useVoiceSession() {
     setConnection('offline'); setPhase('idle'); setLevel(0);
     setEnded(true); setEndedAt(Date.now()); setPendingPreview(null); setError('');
     updateTurns(interruptTurns);
-  }, [cancelRecording, updateTurns]);
+  }, [cancelRecording, cancelVoiceStart, updateTurns]);
 
   const reset = useCallback(() => {
     endCall();
@@ -303,6 +316,7 @@ export function useVoiceSession() {
       } else saveSession(null);
     } catch { saveSession(null); }
     return () => {
+      cancelVoiceStart();
       epochRef.current += 1;
       requestRef.current?.abort();
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -313,12 +327,14 @@ export function useVoiceSession() {
       playerRef.current = null;
       void player.dispose();
     };
-  }, [applySnapshot, cancelRecording, openSocket, updateTurns]);
+  }, [applySnapshot, cancelRecording, cancelVoiceStart, openSocket, updateTurns]);
 
-  async function beginCall() {
-    if (connection === 'connecting' || connection === 'reconnecting') return;
+  async function beginCall(withVoice = false) {
+    if (callStartRef.current.isStarting || connection === 'connecting' || connection === 'reconnecting') return;
     reset();
     const epoch = epochRef.current;
+    callStartRef.current.begin(epoch, withVoice);
+    setVoiceStarting(withVoice);
     setConnection('connecting');
     try {
       const created = await createSession(requestRef.current?.signal);
@@ -330,14 +346,34 @@ export function useVoiceSession() {
       void fetchCatalog(requestRef.current?.signal).then(setCatalog).catch(() => undefined);
     } catch (cause) {
       if (epoch !== epochRef.current) return;
+      cancelVoiceStart();
       setConnection('offline'); setError(errorMessage(cause));
     }
   }
 
+  function beginVoiceCall() {
+    if (callStartRef.current.isStarting || activeTurnRef.current || phase !== 'idle' || connection === 'connecting' || connection === 'reconnecting') return;
+    // Unlock on the click, not after the asynchronous handshake loses activation.
+    void playerRef.current?.unlock().catch(() => undefined);
+    setMicMode('auto');
+    if (sessionRef.current && connection === 'ready') {
+      setVoiceStarting(true);
+      if (!startRecording('auto')) setVoiceStarting(false);
+    } else {
+      void beginCall(true);
+    }
+  }
+
+  useEffect(() => {
+    if (connection !== 'ready' || phase !== 'idle') return;
+    if (callStartRef.current.takeRecording(epochRef.current) && !startRecording('auto')) cancelVoiceStart();
+  }); // Consume once, with the latest microphone settings and connection state.
+
   async function reconnect() {
     const created = sessionRef.current;
-    if (!created || connection !== 'offline') return;
+    if (!created || connection !== 'offline' || callStartRef.current.isStarting) return;
     const epoch = epochRef.current;
+    callStartRef.current.begin(epoch, false);
     reconnectCountRef.current = 0;
     setConnection('connecting'); setError('');
     try {
@@ -346,6 +382,7 @@ export function useVoiceSession() {
       applySnapshot(state); openSocket(created, epoch);
     } catch (cause) {
       if (epoch !== epochRef.current) return;
+      cancelVoiceStart();
       setConnection('offline'); setError(errorMessage(cause));
     }
   }
@@ -353,6 +390,7 @@ export function useVoiceSession() {
   function submitText(text: string): string | null {
     const socket = socketRef.current;
     if (!text.trim() || connection !== 'ready' || phase !== 'idle' || activeTurnRef.current || !socket) return null;
+    cancelVoiceStart(); // An explicit text fallback supersedes any pending microphone start.
     const turn = newTurn('text', text.trim());
     try {
       sendEvent(socket, 'turn.text', turn.id, { text: turn.text });
@@ -366,9 +404,10 @@ export function useVoiceSession() {
     } catch (cause) { setError(errorMessage(cause)); return null; }
   }
 
-  function startRecording() {
+  function startRecording(recordingMode = micMode) {
     const socket = socketRef.current;
-    if (phase !== 'idle' || connection !== 'ready' || activeTurnRef.current || !socket) return;
+    if (phase !== 'idle' || connection !== 'ready' || activeTurnRef.current || !socket || socket.readyState !== WebSocket.OPEN) return false;
+    callStartRef.current.cancel();
     const turn = newTurn('audio');
     const recorder = new PcmRecorder();
     const epoch = epochRef.current;
@@ -391,26 +430,30 @@ export function useVoiceSession() {
       onLevel: value => { if (isCurrent()) setLevel(value); },
       onUnexpectedEnd: () => {
         if (!isCurrent()) return;
+        cancelVoiceStart();
         cancelRecording(); updateTurns(interruptTurns);
         setError('mic_disconnected'); activeTurnRef.current = null; setPhase('idle');
         socket.close(); // Discard partial PCM on the server; never commit a broken recording.
       },
-      silenceDetection: micMode === 'auto' ? { silenceMs, threshold: speechThreshold, onSilence: (elapsed: number) => { if (isCurrent()) void finishRecording(elapsed); } } : undefined,
+      silenceDetection: recordingMode === 'auto' ? { silenceMs, threshold: speechThreshold, onSilence: (elapsed: number) => { if (isCurrent()) void finishRecording(elapsed); } } : undefined,
     }).then(() => {
       if (!isCurrent()) return recorder.dispose();
       sendEvent(socket, 'turn.start', turn.id, { mode: 'audio' });
       audioSentStartRef.current = true;
       queued.forEach((bytes) => socket.send(bytes));
       queued.length = 0;
+      setVoiceStarting(false);
       setPendingPreview(null); setPhase('recording');
       void refreshDevices();
       if (releaseRequestedRef.current) void finishRecording();
     }).catch((cause) => {
       if (!isCurrent()) return;
+      cancelVoiceStart();
       cancelRecording();
       updateTurns((current) => current.map((item) => item.id === turn.id ? { ...item, status: 'error', errorCode: errorMessage(cause) } : item));
       setError(errorMessage(cause)); activeTurnRef.current = null; setPhase('idle');
     });
+    return true;
   }
 
   async function finishRecording(silenceElapsedMs = 0) {
@@ -420,6 +463,7 @@ export function useVoiceSession() {
     const id = activeTurnRef.current;
     if (!recorder || !socket || !id || recordingStopRef.current) return;
     if (!audioSentStartRef.current) {
+      cancelVoiceStart();
       cancelRecording(); activeTurnRef.current = null; setPhase('idle');
       updateTurns(current => current.map(turn => turn.id === id ? { ...turn, status: 'interrupted', errorCode: 'recording_cancelled' } : turn));
       return; // A late permission grant must not start a recording after release.
@@ -452,7 +496,7 @@ export function useVoiceSession() {
 
   return {
     session, connection, phase, turns, selectedId, setSelectedId, catalog, error,
-    pendingPreview, muted, beginCall, reconnect, endCall, resetCall: reset, submitText, startRecording, finishRecording, replay,
+    pendingPreview, muted, beginCall, beginVoiceCall, voiceStarting, reconnect, endCall, resetCall: reset, submitText, startRecording, finishRecording, replay,
     ended, startedAt, endedAt, level, devices, deviceId, setDeviceId, micMode, setMicMode, silenceMs, setSilenceMs, speechThreshold, setSpeechThreshold, refreshDevices,
     stopPlayback: () => { playerRef.current?.stopCurrentPlayback(); setPhase(activeTurnRef.current || audioTurnRef.current ? 'processing' : 'idle'); },
     hasAudio: (id: string) => playerRef.current?.hasAudio(id) ?? false,

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownLeft, ArrowRight, AudioLines, Check,
-  ChevronDown, CircleHelp, Clock3, Headphones, Headset, Languages,
+  ChevronDown, CircleHelp, Clock3, Headphones, Headset, Languages, LoaderCircle,
   Mic, Play, RotateCcw, Send, ShieldCheck, Square, PhoneOff, Settings2,
   Sparkles, Volume2, VolumeX, WifiOff, X,
 } from 'lucide-react';
@@ -22,6 +22,7 @@ const copy = {
     conversationPanels: 'Панели разговора', headline: 'Начните диалог',
     intro: 'Рядом, чтобы помочь',
     start: 'Начать разговор',
+    startVoice: 'Начать голосовой разговор',
     connect: 'Подключаемся к серверу', offline: 'Нет подключения', preparing: 'Подключаем микрофон',
     ready: 'На связи', listening: 'Слушаю вас', processing: 'Обрабатываю запрос', speaking: 'Отвечаю',
     transcript: 'Чат', emptyConversation: 'Расскажите, чем мы можем помочь.',
@@ -55,6 +56,7 @@ const copy = {
     conversationPanels: 'Әңгіме панельдері', headline: 'Диалогты бастаңыз',
     intro: 'Көмектесуге дайынбыз',
     start: 'Әңгімені бастау',
+    startVoice: 'Дауыстық әңгімені бастау',
     connect: 'Серверге қосылуда', offline: 'Байланыс жоқ', preparing: 'Микрофон қосылуда',
     ready: 'Байланыста', listening: 'Тыңдап тұрмын', processing: 'Сұрауды өңдеудемін', speaking: 'Жауап берудемін',
     transcript: 'Чат', emptyConversation: 'Сізге қалай көмектесе аламыз?',
@@ -99,7 +101,7 @@ export default function App() {
   const [visited, setVisited] = useState<string[]>([]);
   const {
     session, connection, phase, turns, selectedId, setSelectedId, catalog, error,
-    pendingPreview, muted, beginCall, reconnect, endCall: finishCall, resetCall,
+    pendingPreview, muted, beginCall, beginVoiceCall, voiceStarting, reconnect, endCall: finishCall, resetCall,
     ended, startedAt, endedAt, level, devices, deviceId, setDeviceId, micMode, setMicMode, silenceMs, setSilenceMs, speechThreshold, setSpeechThreshold, refreshDevices, stopPlayback,
     submitText: sendText, startRecording, finishRecording, replay, hasAudio,
     dismissError, toggleMuted,
@@ -129,8 +131,12 @@ export default function App() {
   }, [turns]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
 
-  const canInteract = connection === 'ready' && phase === 'idle' && !ended;
+  const canInteract = connection === 'ready' && phase === 'idle' && !ended && !voiceStarting;
   const hasSession = Boolean(session || connection === 'connecting');
+  const isConnecting = connection === 'connecting' || connection === 'reconnecting';
+  const voiceStartBusy = voiceStarting || isConnecting;
+  const voiceStartLabel = voiceStartBusy ? t.connect : t.startVoice;
+  const voiceStartDisabled = voiceStartBusy || phase !== 'idle' || ended || Boolean(session && connection !== 'ready');
 
   return <div className="app-shell">
     <header className="site-header"><div className="header-inner">
@@ -139,7 +145,7 @@ export default function App() {
         ['conversation', language === 'ru' ? 'Разговор' : 'Әңгіме'],
         ['catalog', language === 'ru' ? 'Сценарии' : 'Сценарийлер'],
         ['evaluation', language === 'ru' ? 'Оценка и сравнение' : 'Бағалау және салыстыру'],
-      ] as const).map(([id,label]) => <button key={id} aria-current={section === id ? 'page' : undefined} disabled={section !== id && (phase !== 'idle')} onClick={() => {setVisited(current => current.includes(id) ? current : [...current,id]); setSection(id);}}>{label}</button>)}</nav>
+      ] as const).map(([id,label]) => <button key={id} aria-current={section === id ? 'page' : undefined} disabled={section !== id && (phase !== 'idle' || voiceStarting)} onClick={() => {setVisited(current => current.includes(id) ? current : [...current,id]); setSection(id);}}>{label}</button>)}</nav>
       <div className="header-actions"><button className="language-button" onClick={() => setLanguage(language === 'ru' ? 'kk' : 'ru')} aria-label={language === 'ru' ? 'Переключить язык интерфейса' : 'Интерфейс тілін ауыстыру'}><Languages size={17} /><span>{language === 'ru' ? 'Рус' : 'Қаз'}</span><ChevronDown size={14} /></button>
         {hasSession && section === 'conversation' && <button className="header-new" aria-label={t.newCall} onClick={() => { void endCall(); }}><RotateCcw size={16} /><span>{t.newCall}</span></button>}
       </div>
@@ -156,12 +162,12 @@ export default function App() {
       {ended && <div className="ended-notice" role="status"><PhoneOff size={17} />{language === 'ru' ? 'Звонок завершён. История и аудио сохранены до нового звонка или перезагрузки.' : 'Қоңырау аяқталды. Тарих пен аудио жаңа қоңырауға не бетті қайта жүктеуге дейін сақталады.'}</div>}
       {error && <div className="error-banner" role="alert"><WifiOff size={18} /><span>{errorText(error, language)}</span><button onClick={dismissError} aria-label={language === 'ru' ? 'Закрыть сообщение' : 'Хабарламаны жабу'}><X size={17} /></button></div>}
       {session && !ended && connection === 'offline' && <div className="reconnect-notice"><WifiOff size={17} /><span>{t.offline}</span><button onClick={() => void reconnect()}>{t.reconnect}</button></div>}
-      <div className="mobile-tabs" aria-label={t.conversationPanels}><button aria-pressed={mobileTab === 'conversation'} className={mobileTab === 'conversation' ? 'is-active' : ''} onClick={() => setMobileTab('conversation')}>{t.transcript}</button><button aria-pressed={mobileTab === 'trace'} className={mobileTab === 'trace' ? 'is-active' : ''} onClick={() => setMobileTab('trace')}>{t.trace}</button></div>
+      <div className="mobile-tabs" aria-label={t.conversationPanels}><button aria-pressed={mobileTab === 'conversation'} className={mobileTab === 'conversation' ? 'is-active' : ''} onClick={() => setMobileTab('conversation')}>{t.transcript}</button><button disabled={voiceStarting} aria-pressed={mobileTab === 'trace'} className={mobileTab === 'trace' ? 'is-active' : ''} onClick={() => setMobileTab('trace')}>{t.trace}</button></div>
       <div className={`workspace ${mobileTab === 'trace' ? 'show-trace' : ''}`}>
         <section className="conversation-panel">
           <div className="panel-heading"><div className="panel-heading-title"><h2>{t.transcript}</h2></div><div className="panel-heading-right">{startedAt !== null && <CallTimer startedAt={startedAt} endedAt={endedAt} label={language === 'ru' ? 'Длительность звонка' : 'Қоңырау ұзақтығы'} />}{session && !ended && <button className="end-call" onClick={() => { finishCall(); setDraftRetry(false); }} aria-label={language === 'ru' ? 'Завершить звонок' : 'Қоңырауды аяқтау'} title={t.end}><PhoneOff size={16} />{t.end}</button>}{hasSession && !ended && <span role="status" className={`live-indicator ${connection !== 'ready' ? 'is-offline' : ''}`}><span />{connection === 'ready' ? t.ready : connection === 'offline' ? t.offline : t.connect}</span>}</div></div>
           <div className={`conversation-body ${turns.length === 0 ? 'is-empty' : ''}`} ref={conversationRef} onScroll={handleConversationScroll} tabIndex={0} role="region" aria-label={t.transcript}>
-            {turns.length === 0 ? <div className="welcome-state"><div className="welcome-symbol"><Headset size={38} strokeWidth={1.7} aria-hidden="true" /></div><h3>{t.headline}</h3><p role="status">{session ? (micMode === 'hold' ? t.hold : language === 'ru' ? 'Нажмите, чтобы говорить' : 'Сөйлеу үшін басыңыз') : t.emptyConversation}</p><div className="welcome-actions">{!session && <button className="primary-button" onClick={() => void beginCall()} disabled={connection === 'connecting' || connection === 'reconnecting'}><Mic size={18} />{t.start}<ArrowRight size={17} /></button>}</div></div> : <div className="turn-list">
+            {turns.length === 0 ? <div className="welcome-state"><button type="button" className="welcome-symbol" onClick={() => void beginVoiceCall()} disabled={voiceStartDisabled} aria-label={voiceStartLabel} title={voiceStartLabel} aria-busy={voiceStartBusy}>{voiceStartBusy ? <LoaderCircle className="welcome-spinner" size={38} strokeWidth={1.7} aria-hidden="true" /> : <Headset size={38} strokeWidth={1.7} aria-hidden="true" />}</button><h3>{t.headline}</h3><p role="status">{voiceStartBusy ? t.connect : session ? (micMode === 'hold' ? t.hold : language === 'ru' ? 'Нажмите, чтобы говорить' : 'Сөйлеу үшін басыңыз') : t.emptyConversation}</p><div className="welcome-actions">{!session && <button className="primary-button" onClick={() => void beginCall()} disabled={connection === 'connecting' || connection === 'reconnecting'}><Mic size={18} />{t.start}<ArrowRight size={17} /></button>}</div></div> : <div className="turn-list">
               {turns.map((turn, index) => <div className="turn-group" key={turn.id}>
                 <div className="turn-index"><span>{String(index + 1).padStart(2, '0')}</span><span>{new Date(turn.at).toLocaleTimeString(language === 'kk' ? 'kk-KZ' : 'ru-RU', { hour: '2-digit', minute: '2-digit' })}</span></div>
                 <div className="message user-message"><div className="message-author"><span className="avatar client-avatar"><ArrowDownLeft size={15} /></span><b>{language === 'kk' ? 'Клиент' : 'Клиент'}</b><span className="message-language">{turn.language?.toUpperCase() || (turn.mode === 'text' ? 'TEXT' : 'AUDIO')}</span></div><p>{maskPersonalData(turn.text || turn.partialText || (turn.restored ? t.restored : turn.status === 'error' || turn.status === 'interrupted' ? t.noTranscript : phase === 'preparing' ? t.preparing : t.recognizing))}</p></div>
@@ -188,7 +194,7 @@ export default function App() {
               <form className="text-form" onSubmit={(event) => submitText(event)}><input ref={inputRef} value={textInput} onChange={(event) => setTextInput(event.target.value)} maxLength={4000} placeholder={t.textPlaceholder} aria-label={t.textPlaceholder} disabled={!canInteract} /><button type="submit" aria-label={t.send} disabled={!canInteract || !textInput.trim()}><Send size={18} /></button></form>
               <button className="sound-button" onClick={toggleMuted} aria-pressed={muted} aria-label={muted ? t.unmute : t.mute} title={muted ? t.unmute : t.mute}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button>
             </div>
-            {(phase === 'recording' || phase === 'preparing') && <div className="recording-controls"><label>{language === 'ru' ? 'Уровень микрофона' : 'Микрофон деңгейі'}<meter min={0} max={1} value={Math.min(1, level * 4)} aria-label={language === 'ru' ? 'Уровень микрофона' : 'Микрофон деңгейі'} /></label><button onClick={() => void finishRecording()}>{language === 'ru' ? 'Завершить реплику' : 'Репликаны аяқтау'}</button></div>}
+            {(phase === 'recording' || phase === 'preparing') && <div className="recording-controls"><label>{language === 'ru' ? 'Уровень микрофона' : 'Микрофон деңгейі'}<meter min={0} max={1} value={Math.min(1, level * 4)} aria-label={language === 'ru' ? 'Уровень микрофона' : 'Микрофон деңгейі'} /></label><button autoFocus={voiceStarting} onClick={() => void finishRecording()}>{language === 'ru' ? 'Завершить реплику' : 'Репликаны аяқтау'}</button></div>}
             {phase === 'speaking' && <button className="stop-audio" onClick={stopPlayback}><Square size={13} />{language === 'ru' ? 'Остановить звук' : 'Дыбысты тоқтату'}</button>}
             <details className="audio-settings"><summary><Settings2 size={14} />{language === 'ru' ? 'Настройки микрофона' : 'Микрофон баптаулары'}</summary><div>
               <label>{language === 'ru' ? 'Микрофон' : 'Микрофон'}<select disabled={phase !== 'idle'} value={deviceId} onChange={event => setDeviceId(event.target.value)}><option value="">{language === 'ru' ? 'Системный по умолчанию' : 'Жүйелік әдепкі'}</option>{devices.filter(device => device.deviceId && device.deviceId !== 'default').map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `${language === 'ru' ? 'Микрофон' : 'Микрофон'} ${index + 1}`}</option>)}</select></label>

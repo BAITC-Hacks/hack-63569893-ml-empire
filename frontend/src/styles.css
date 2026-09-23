@@ -63,7 +63,11 @@ select { font: inherit; max-width: 100%; }
 .conversation-body.is-empty { display: grid; place-items: center; }
 .welcome-state { text-align: center; padding: 32px 24px 40px; max-width: 410px; }
 .welcome-symbol { display: grid; place-items: center; width: 80px; height: 80px; margin: 0 auto 20px; padding: 0; border: 1px solid oklch(91.5% 0.027 165); border-radius: 50%; color: var(--green); background: oklch(96.5% 0.018 165); transition: background-color .18s ease-out, color .18s ease-out, transform .18s ease-out; }
+.welcome-symbol:hover:not(:disabled) { color: oklch(99% 0.005 165); background: var(--green); transform: translateY(-1px); }
 .welcome-symbol:active:not(:disabled) { transform: scale(.96); }
+.welcome-symbol[aria-busy="true"] { cursor: wait; opacity: 1; }
+.welcome-spinner { animation: welcome-spin 1s linear infinite; }
+@keyframes welcome-spin { to { transform: rotate(360deg); } }
 .welcome-state h3 { font-size: 25px; letter-spacing: -.035em; margin: 0 0 10px; line-height: 1.2; }
 .welcome-state > p { color: #7e8984; font-size: 13px; line-height: 1.6; margin: 0; }
 .welcome-actions { display: flex; flex-direction: column; align-items: center; gap: 13px; margin-top: 25px; }
