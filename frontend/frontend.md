@@ -1,6 +1,6 @@
 # Frontend: подключение к Voice Router
 
-Статус: контракт для будущей реализации в каталоге `frontend/`. HTTP- и WebSocket-эндпоинты ниже ещё не созданы; план бэкенда находится в [backend implementation plan](docs/superpowers/plans/2026-09-23-voice-router-backend.md), общая схема — в [архитектуре](docs/voice-router-architecture.md).
+Статус: контракт для будущей реализации в каталоге `frontend/`. План бэкенда находится в [backend implementation plan](../docs/superpowers/plans/2026-09-23-voice-router-backend.md), общая схема — в [архитектуре](../docs/voice-router-architecture.md).
 
 ## Что должен показывать интерфейс
 
@@ -129,6 +129,6 @@ API-ключи провайдеров хранятся только на бэк�
 1. Подключить `POST /sessions`, текстовые `turn.text`, `agent.text`, `route.decision` и `trace.updated`; проверить смену языка и несколько сценариев.
 2. Добавить микрофон, `AudioWorklet`, `turn.start`/binary/`turn.commit` и отображение частичного транскрипта.
 3. Добавить PCM-воспроизведение, `playback.started`, ошибки TTS и восстановление сессии после перезагрузки.
-4. Проверить живые русские, казахские и смешанные реплики из [условий кейса](datas/README.ru.md), а также явное согласие перед необратимым действием.
+4. Проверить живые русские, казахские и смешанные реплики из [условий кейса](../datas/README.ru.md), а также явное согласие перед необратимым действием.
 
 Технические основания контракта: [FastAPI WebSockets](https://fastapi.tiangolo.com/advanced/websockets/), [OpenAI Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription), [OpenAI TTS](https://developers.openai.com/api/docs/guides/text-to-speech).
