@@ -7,7 +7,7 @@ from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.catalog import Catalog
 from app.config import Settings
@@ -58,7 +58,7 @@ class _ModelSlot(BaseModel):
 
 
 class _ModelDecision(BaseModel):
-    """Wire schema avoids arbitrary-key objects, which Structured Outputs disallows."""
+    """Legacy injectable response shape retained for existing callers and tests."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -70,18 +70,47 @@ class _ModelDecision(BaseModel):
     needs_clarification: bool
 
 
+class _CompactScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    i: str
+    r: str
+
+
+class _CompactSlot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n: str
+    v: str
+
+
+class _CompactDecision(BaseModel):
+    """Short provider keys; public RouterDecision remains unchanged."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    l: Literal["ru", "kk"]
+    s: list[_CompactScenario] = Field(min_length=1)
+    a: list[str] = Field(max_length=2)
+    v: list[_CompactSlot]
+    c: bool
+    q: bool
+
+
 def build_router_messages(text: str, context: RouterContext, catalog: Catalog):
     """Present all catalog choices and boundaries with bounded call history."""
 
     lines = [
         "Choose the client's Saqta Insurance intent from the catalog below. Return JSON matching the schema.",
+        "Output keys: l=language, s=selected scenarios (i=ID, r=short evidence reason), a=alternatives, v=supplied slots (n=name, v=value), c=continuation, q=needs clarification.",
+        "s must contain at least one primary scenario; never put the only plausible intent in a.",
         "Use only listed IDs. Include all distinct intents in order of mention; put an urgent intent first.",
         "Use not_this_if boundaries to distinguish close scenarios. Never invent a business route.",
-        "For unclear intent choose SYS_UNCLEAR and set needs_clarification=true.",
+        "For unclear intent choose SYS_UNCLEAR as the sole primary scenario and set q=true.",
         "Choose response language ru or kk from the client's dominant language; mixed Kazakh/Russian may be kk.",
-        "Each reason must briefly cite the client's words and the relevant boundary, without hidden reasoning.",
-        "confidence_estimate is an uncalibrated model estimate, not a probability of correctness.",
-        "Slots must use catalog slot names. Return a list of name/value pairs; use null if the value is missing.",
+        "Each r must cite the client's words and relevant boundary in 3-8 words, without hidden reasoning.",
+        "Give at most two alternatives. Use [] when none are plausible.",
+        "Slots must use catalog slot names. Return only supplied nonempty values; use [] when none are supplied.",
         "Catalog:",
     ]
     for scenario in catalog.scenarios.values():
@@ -132,13 +161,33 @@ class LLMRouter:
                 self.structured_model = ChatOpenAI(
                     model=self.settings.router_model,
                     use_responses_api=True,
-                    reasoning_effort="low",
-                ).with_structured_output(_ModelDecision, method="json_schema")
+                    reasoning_effort=self.settings.router_reasoning_effort,
+                    max_retries=1,
+                    max_completion_tokens=768,
+                ).with_structured_output(_CompactDecision, method="json_schema")
             response = await asyncio.wait_for(
                 self.structured_model.ainvoke(build_router_messages(text, context, self.catalog)),
                 timeout=self.settings.router_timeout_seconds,
             )
-            result = _ModelDecision.model_validate(response)
+            if isinstance(response, _CompactDecision) or (
+                isinstance(response, dict) and "l" in response
+            ):
+                compact = _CompactDecision.model_validate(response)
+                result = _ModelDecision(
+                    language=compact.l,
+                    scenarios=[
+                        SelectedScenario(
+                            scenario_id=item.i, reason=item.r, confidence_estimate=None
+                        )
+                        for item in compact.s
+                    ],
+                    alternatives=compact.a,
+                    slots=[_ModelSlot(name=item.n, value=item.v) for item in compact.v],
+                    is_continuation=compact.c,
+                    needs_clarification=compact.q,
+                )
+            else:
+                result = _ModelDecision.model_validate(response)
             self._validate_ids(result)
             slots = {slot.name: slot.value for slot in result.slots}
             if len(slots) != len(result.slots) or set(slots) - self.catalog.slots.keys():
@@ -162,6 +211,8 @@ class LLMRouter:
         selected_ids = [item.scenario_id for item in result.scenarios]
         if any(item not in valid for item in (*selected_ids, *result.alternatives)):
             raise ValueError("Unknown scenario ID")
+        if len(result.alternatives) > 2:
+            raise ValueError("Too many alternatives")
         if len(selected_ids) != len(set(selected_ids)):
             raise ValueError("Duplicate scenario ID")
         if "SYS_UNCLEAR" in selected_ids and (

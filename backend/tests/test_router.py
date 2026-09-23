@@ -40,6 +40,91 @@ def answer(scenario_id, language="ru", *, additional=(), alternatives=(), slots=
     }
 
 
+def compact_answer(scenario_id, *, additional=(), slots=(), alternatives=()):
+    return {
+        "l": "ru",
+        "s": [{"i": item, "r": "Client asks for the claim status"} for item in (scenario_id, *additional)],
+        "a": list(alternatives),
+        "v": [{"n": name, "v": value} for name, value in slots],
+        "c": False,
+        "q": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_compact_response_restores_public_decision_and_omits_confidence(catalog):
+    response = compact_answer("SC33", additional=("SC19",), slots=(("city", "Almaty"),))
+    decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(response)).route(
+        "Алматыда менің өтінішім қандай күйде?", RouterContext.empty()
+    )
+
+    assert [item.scenario_id for item in decision.scenarios] == ["SC33", "SC19"]
+    assert decision.scenarios[0].reason == "Client asks for the claim status"
+    assert decision.scenarios[0].confidence_estimate is None
+    assert decision.slots == {"city": "Almaty"}
+    assert decision.routing_error is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        compact_answer("SC99"),
+        compact_answer("SC33", slots=(("city", "Almaty"), ("city", "Astana"))),
+        compact_answer("SC33", alternatives=("SC19", "SC20", "SC21")),
+    ],
+)
+async def test_compact_response_rejects_invalid_ids_slots_and_excess_alternatives(catalog, response):
+    decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(response)).route(
+        "Что с моим заявлением?", RouterContext.empty()
+    )
+    assert decision.routing_error is not None
+    assert decision.scenarios[0].scenario_id == "SYS_UNCLEAR"
+
+
+@pytest.mark.asyncio
+async def test_compact_empty_primary_selection_is_invalid(catalog):
+    response = compact_answer("SC31", alternatives=("SC31",))
+    response["s"] = []
+    decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(response)).route(
+        "Хочу прекратить страховку", RouterContext.empty()
+    )
+    assert decision.scenarios[0].scenario_id == "SYS_UNCLEAR"
+    assert decision.routing_error is not None
+
+
+@pytest.mark.asyncio
+async def test_provider_bound_schema_requires_primary_and_limits_alternatives(catalog, monkeypatch):
+    captured = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured["settings"] = kwargs
+
+        def with_structured_output(self, schema, *, method):
+            captured["schema"] = schema.model_json_schema()
+            return FakeStructuredModel(compact_answer("SC31"))
+
+    monkeypatch.setattr("app.router.ChatOpenAI", FakeChatOpenAI)
+    decision = await LLMRouter(catalog).route("Хочу прекратить страховку", RouterContext.empty())
+
+    assert decision.scenarios[0].scenario_id == "SC31"
+    assert captured["schema"]["properties"]["s"]["minItems"] == 1
+    assert captured["schema"]["properties"]["a"]["maxItems"] == 2
+
+
+@pytest.mark.asyncio
+async def test_compact_prompt_names_actual_clarification_key_and_primary_requirement(catalog):
+    fake = FakeStructuredModel(compact_answer("SC31"))
+    await LLMRouter(catalog, structured_model=fake).route(
+        "Хочу прекратить страховку", RouterContext.empty()
+    )
+    prompt = fake.messages[0].content
+    assert "q=true" in prompt
+    assert "s must contain" in prompt
+    assert "needs_clarification=true" not in prompt
+
+
 @pytest.fixture
 def catalog():
     return Catalog.load(DATA_DIR)

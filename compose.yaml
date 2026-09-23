@@ -8,6 +8,7 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ROUTER_MODEL: ${ROUTER_MODEL:-gpt-6-sol}
+      ROUTER_REASONING_EFFORT: ${ROUTER_REASONING_EFFORT:-none}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
       DATA_DIR: /app/datas
     init: true
