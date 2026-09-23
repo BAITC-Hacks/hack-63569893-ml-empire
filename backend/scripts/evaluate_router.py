@@ -24,9 +24,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "datas"
 
 
-async def evaluate(model: str) -> None:
+async def evaluate(model: str, *, router: LLMRouter | None = None) -> None:
     catalog = Catalog.load(DATA_DIR)
-    router = LLMRouter(catalog, Settings(data_dir=DATA_DIR, router_model=model))
+    if router is None:
+        router = LLMRouter(catalog, Settings(data_dir=DATA_DIR, router_model=model))
     dev_path = DATA_DIR / "dev_utterances.json"
     utterances = json.loads(dev_path.read_text(encoding="utf-8"))["utterances"]
     predictions: dict[str, list[str]] = {}
@@ -35,6 +36,10 @@ async def evaluate(model: str) -> None:
     for index, utterance in enumerate(utterances, start=1):
         started = time.perf_counter()
         decision = await router.route(utterance["text"], RouterContext.empty())
+        if decision.routing_error is not None:
+            raise RuntimeError(
+                f"{model} evaluation aborted at {utterance['id']}: router error {decision.routing_error}"
+            )
         latencies_ms.append((time.perf_counter() - started) * 1000)
         predictions[utterance["id"]] = [item.scenario_id for item in decision.scenarios]
         if index % 10 == 0 or index == len(utterances):
@@ -58,7 +63,11 @@ def main() -> int:
     if not os.environ.get("OPENAI_API_KEY"):
         print("OPENAI_API_KEY is required for live evaluation.", file=sys.stderr)
         return 2
-    asyncio.run(evaluate(args.model))
+    try:
+        asyncio.run(evaluate(args.model))
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     return 0
 
 

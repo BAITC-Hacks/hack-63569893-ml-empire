@@ -8,6 +8,7 @@ import pytest
 
 from app.catalog import Catalog
 from app.router import LLMRouter, RouterContext
+from scripts.evaluate_router import evaluate
 
 
 DATA_DIR = Path(__file__).parents[2] / "datas"
@@ -100,6 +101,16 @@ async def test_system_intent_is_valid(catalog):
     prompt = fake.messages[0].content
     assert "ends the conversation" in prompt
     assert "not about Saqta insurance" in prompt
+    assert "life insurance which is not offered" in prompt
+
+
+@pytest.mark.asyncio
+async def test_unclear_intent_always_requires_clarification(catalog):
+    decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(answer("SYS_UNCLEAR"))).route(
+        "Не знаю, что делать со страховкой", RouterContext.empty()
+    )
+    assert decision.needs_clarification
+    assert [item.scenario_id for item in decision.scenarios] == ["SYS_UNCLEAR"]
 
 
 @pytest.mark.asyncio
@@ -123,6 +134,18 @@ async def test_timeout_requires_clarification(catalog):
     )
     assert decision.needs_clarification
     assert [item.scenario_id for item in decision.scenarios] == ["SYS_UNCLEAR"]
+    assert decision.routing_error == "TimeoutError"
+
+
+@pytest.mark.asyncio
+async def test_legitimate_unclear_intent_has_no_routing_error(catalog):
+    response = answer("SYS_UNCLEAR")
+    response["needs_clarification"] = True
+    decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(response)).route(
+        "Нужна помощь", RouterContext.empty()
+    )
+    assert decision.needs_clarification
+    assert decision.routing_error is None
 
 
 @pytest.mark.asyncio
@@ -161,3 +184,10 @@ def test_evaluation_requires_explicit_api_key():
     )
     assert completed.returncode == 2
     assert "OPENAI_API_KEY" in completed.stderr
+
+
+@pytest.mark.asyncio
+async def test_evaluation_aborts_when_router_reports_model_error(catalog):
+    router = LLMRouter(catalog, structured_model=FakeStructuredModel(RuntimeError("service unavailable")))
+    with pytest.raises(RuntimeError, match=r"U001.*RuntimeError"):
+        await evaluate("gpt-6-sol", router=router)

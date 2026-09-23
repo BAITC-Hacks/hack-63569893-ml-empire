@@ -14,11 +14,6 @@ from app.config import Settings
 
 
 _LOGGER = logging.getLogger(__name__)
-_SYSTEM_INTENT_DESCRIPTIONS = {
-    "SYS_OUT_OF_SCOPE": "Request is not about Saqta insurance services.",
-    "SYS_UNCLEAR": "Client intent cannot be determined; ask one clarifying question.",
-    "SYS_GOODBYE": "Client ends the conversation.",
-}
 
 
 @dataclass(frozen=True)
@@ -52,6 +47,7 @@ class RouterDecision(BaseModel):
     slots: dict[str, str | None]
     is_continuation: bool
     needs_clarification: bool
+    routing_error: str | None = None
 
 
 class _ModelSlot(BaseModel):
@@ -102,7 +98,7 @@ def build_router_messages(text: str, context: RouterContext, catalog: Catalog):
             f"not_this_if: {boundary or 'none'}; examples: {examples}"
         )
     for intent_id in sorted(catalog.system_intents):
-        lines.append(f"{intent_id}: {_SYSTEM_INTENT_DESCRIPTIONS.get(intent_id, 'system intent')}")
+        lines.append(f"{intent_id}: {catalog.system_intent_descriptions[intent_id]}")
     lines.append("Valid slots: " + ", ".join(sorted(catalog.slots)))
 
     recent = "\n".join(turn[:500] for turn in context.recent_turns[-4:])
@@ -161,7 +157,7 @@ class LLMRouter:
             )
         except Exception as exc:
             _LOGGER.warning("Router failed safely: %s", type(exc).__name__)
-            return _clarify(context.language or "ru")
+            return _clarify(context.language or "ru", routing_error=type(exc).__name__)
 
     def _validate_ids(self, result: _ModelDecision) -> None:
         valid = self.catalog.scenarios.keys() | self.catalog.system_intents
@@ -170,9 +166,15 @@ class LLMRouter:
             raise ValueError("Unknown scenario ID")
         if len(selected_ids) != len(set(selected_ids)):
             raise ValueError("Duplicate scenario ID")
+        if "SYS_UNCLEAR" in selected_ids and (
+            not result.needs_clarification or selected_ids != ["SYS_UNCLEAR"]
+        ):
+            raise ValueError("SYS_UNCLEAR must be the sole scenario and require clarification")
 
 
-def _clarify(language: Literal["ru", "kk"] = "ru") -> RouterDecision:
+def _clarify(
+    language: Literal["ru", "kk"] = "ru", *, routing_error: str | None = None
+) -> RouterDecision:
     return RouterDecision(
         language=language,
         scenarios=[
@@ -186,4 +188,5 @@ def _clarify(language: Literal["ru", "kk"] = "ru") -> RouterDecision:
         slots={},
         is_continuation=False,
         needs_clarification=True,
+        routing_error=routing_error,
     )

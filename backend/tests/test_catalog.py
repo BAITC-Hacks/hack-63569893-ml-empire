@@ -20,6 +20,13 @@ def test_catalog_loads_valid_dataset_and_resolves_references():
     assert all(slot in catalog.slots for scenario in catalog.scenarios.values() for slot in scenario.slots.required)
 
 
+def test_catalog_preserves_system_intent_boundaries():
+    catalog = Catalog.load(DATA_DIR)
+    assert catalog.system_intent_descriptions["SYS_OUT_OF_SCOPE"] == (
+        "Request is not about Saqta insurance services (loans, weather, jobs, life insurance which is not offered)."
+    )
+
+
 def test_duplicate_scenario_id_is_rejected(tmp_path):
     _copy_dataset(tmp_path)
     path = tmp_path / "scenarios.json"

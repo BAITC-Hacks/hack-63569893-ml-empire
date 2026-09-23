@@ -14,6 +14,7 @@ from app.domain import ActionSpec, ScenarioSpec, SlotSpec, SystemIntentSpec
 class Catalog:
     scenarios: dict[str, ScenarioSpec]
     system_intents: set[str]
+    system_intent_descriptions: dict[str, str]
     actions: dict[str, ActionSpec]
     error_codes: dict[str, str]
     slots: dict[str, dict]
@@ -60,6 +61,7 @@ class Catalog:
         return cls(
             scenarios=scenario_specs,
             system_intents=system_intents,
+            system_intent_descriptions={row["id"]: row["description"] for row in system_rows},
             actions=action_specs,
             error_codes=error_codes,
             slots=slot_specs,
