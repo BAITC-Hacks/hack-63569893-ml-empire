@@ -86,7 +86,7 @@ export function CatalogEditor({ language }: { language: 'ru' | 'kk' }) {
   const filteredSystem = catalog.system_intents.filter(item => `${item.id} ${item.description}`.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()));
   const issues = [...importIssues, ...validation.issues];
   return <section className="catalog-editor" aria-labelledby="catalog-title">
-    <header className="catalog-intro"><div><p className="eyebrow">CATALOG · LOCAL</p><h2 id="catalog-title">{t.title}</h2><p>{t.intro}</p><p className="catalog-data-note">{t.note}</p></div><span className="catalog-version">{t.meta}<strong>{typeof catalog.meta.version === 'string' ? catalog.meta.version : '∅'}</strong><small>{typeof catalog.meta.as_of_date === 'string' ? catalog.meta.as_of_date : ''}</small></span></header>
+    <header className="catalog-intro"><h1 id="catalog-title">{t.title}</h1></header>
     <div className="catalog-toolbar">
       <button type="button" onClick={() => { const value = createScenario(catalog, refs); install(value, value.scenarios.at(-1)!.scenario_id); }} disabled={dirty}><Plus size={16} />{t.add}</button>
       <button type="button" onClick={() => fileInput.current?.click()} disabled={dirty}><FileUp size={16} />{t.import}</button>

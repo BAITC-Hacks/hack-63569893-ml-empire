@@ -1,6 +1,4 @@
 .rich-supervisor { min-width: 0; color: #234333; }
-.rich-supervisor .supervisor-topline { padding-bottom: 15px; }
-.rich-supervisor .supervisor-topline p:last-child { max-width: 36ch; line-height: 1.5; }
 .rich-supervisor .turn-picker { margin-bottom: 10px; }
 .rich-supervisor .turn-picker button { min-height: 36px; flex-basis: 38px; color: #536e5f; }
 .rich-supervisor .turn-picker button.is-selected { color: #f8fffb; }

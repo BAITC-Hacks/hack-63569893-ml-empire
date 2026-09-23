@@ -29,7 +29,6 @@ export function useVoiceSession() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [error, setError] = useState('');
-  const [preview, setPreview] = useState(false);
   const [pendingPreview, setPendingPreview] = useState<ActionPreview | null>(null);
   const [muted, setMuted] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -242,7 +241,7 @@ export function useVoiceSession() {
     endCall();
     playerRef.current?.clear();
     setSession(null); setEnded(false); setStartedAt(null); setEndedAt(null);
-    setPreview(false); setSelectedId(null);
+    setSelectedId(null);
     updateTurns(() => []);
   }, [endCall, updateTurns]);
 
@@ -353,7 +352,7 @@ export function useVoiceSession() {
 
   function submitText(text: string): string | null {
     const socket = socketRef.current;
-    if (!text.trim() || preview || connection !== 'ready' || phase !== 'idle' || activeTurnRef.current || !socket) return null;
+    if (!text.trim() || connection !== 'ready' || phase !== 'idle' || activeTurnRef.current || !socket) return null;
     const turn = newTurn('text', text.trim());
     try {
       sendEvent(socket, 'turn.text', turn.id, { text: turn.text });
@@ -369,7 +368,7 @@ export function useVoiceSession() {
 
   function startRecording() {
     const socket = socketRef.current;
-    if (preview || phase !== 'idle' || connection !== 'ready' || activeTurnRef.current || !socket) return;
+    if (phase !== 'idle' || connection !== 'ready' || activeTurnRef.current || !socket) return;
     const turn = newTurn('audio');
     const recorder = new PcmRecorder();
     const epoch = epochRef.current;
@@ -453,12 +452,11 @@ export function useVoiceSession() {
 
   return {
     session, connection, phase, turns, selectedId, setSelectedId, catalog, error,
-    preview, pendingPreview, muted, beginCall, reconnect, endCall, resetCall: reset, submitText, startRecording, finishRecording, replay,
+    pendingPreview, muted, beginCall, reconnect, endCall, resetCall: reset, submitText, startRecording, finishRecording, replay,
     ended, startedAt, endedAt, level, devices, deviceId, setDeviceId, micMode, setMicMode, silenceMs, setSilenceMs, speechThreshold, setSpeechThreshold, refreshDevices,
     stopPlayback: () => { playerRef.current?.stopCurrentPlayback(); setPhase(activeTurnRef.current || audioTurnRef.current ? 'processing' : 'idle'); },
     hasAudio: (id: string) => playerRef.current?.hasAudio(id) ?? false,
     dismissError: () => setError(''),
     toggleMuted: () => { playerRef.current?.setMuted(!muted); setMuted(!muted); if (!activeTurnRef.current && !audioTurnRef.current) setPhase('idle'); },
-    showPreview: (turn: Turn) => { reset(); setPreview(true); updateTurns(() => [turn]); setSelectedId(turn.id); },
   };
 }

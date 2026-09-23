@@ -1,10 +1,6 @@
+.catalog-intro { margin: 0 0 20px; }
+.catalog-intro h1 { color: var(--text); font-size: 25px; letter-spacing: -.04em; margin: 0; }
 .catalog-editor { color: var(--text); min-width: 0; }
-.catalog-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin: 0 0 20px; }
-.catalog-intro h2 { font-size: 25px; letter-spacing: -.04em; margin: 0 0 12px; }
-.catalog-intro p:not(.eyebrow) { max-width: 76ch; font-size: 13px; line-height: 1.65; margin: 8px 0; color: #53665d; }
-.catalog-intro .catalog-data-note { font-size: 12px; }
-.catalog-version { display: flex; flex-direction: column; flex-shrink: 0; gap: 7px; color: #53665d; font-size: 11px; padding-top: 20px; }
-.catalog-version strong { color: var(--green-dark); font-size: 18px; }
 .catalog-toolbar, .catalog-apply { display: flex; flex-wrap: wrap; gap: 8px; }
 .catalog-editor button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 9px 13px; border: 1px solid #d5e1da; background: #fdfefd; border-radius: 9px; color: #335a48; font-size: 12px; font-weight: 700; }
 .catalog-editor button:hover:not(:disabled) { border-color: #528f71; background: #edf6f0; }
@@ -49,5 +45,5 @@
 .catalog-reference summary { cursor: pointer; font-weight: 700; color: #365a46; }
 .catalog-reference ul { columns: 2; padding-left: 18px; }
 .catalog-reference p { overflow-wrap: anywhere; }
-@media (max-width: 850px) { .catalog-intro { flex-direction: column; gap: 0; }.catalog-version { flex-direction: row; align-items: baseline; flex-wrap: wrap; padding-top: 0; }.catalog-layout { grid-template-columns: minmax(0, 1fr); }.catalog-sidebar { border-right: 0; border-bottom: 1px solid #dfe8e2; }.catalog-list { max-height: 230px; }.catalog-detail { padding: 20px; } }
+@media (max-width: 850px) { .catalog-layout { grid-template-columns: minmax(0, 1fr); }.catalog-sidebar { border-right: 0; border-bottom: 1px solid #dfe8e2; }.catalog-list { max-height: 230px; }.catalog-detail { padding: 20px; } }
 @media (max-width: 480px) { .catalog-fields { grid-template-columns: minmax(0, 1fr); }.catalog-detail { padding: 17px 13px; }.catalog-entry-heading { flex-direction: column; align-items: flex-start; }.catalog-toolbar button { flex: 1 1 140px; }.catalog-reference ul { columns: 1; }.catalog-json { padding: 10px; font-size: 11px; }.catalog-apply button { width: 100%; } }

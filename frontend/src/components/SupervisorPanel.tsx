@@ -8,7 +8,7 @@ import { AffectPanel } from './AffectPanel';
 
 const labels = {
   ru: {
-    eyebrow: 'ПАНЕЛЬ СУПЕРВИЗОРА', title: 'Трассировка решения', subtitle: 'Маршрут, действия и замеры каждой реплики',
+    title: 'Панель Трассировки',
     turn: 'Реплика', empty: 'Здесь появится решение', emptyHelp: 'Начните разговор. После ответа можно проверить его маршрут и действия.',
     unknown: 'Сервер не передал', none: 'Нет', transcript: 'Финальный транскрипт', restored: 'Восстановлена краткая сессия. Полный транскрипт может быть недоступен.',
     primary: 'Основной выбранный сценарий', additional: 'Дополнительные намерения', active: 'Активный сценарий', alternatives: 'Альтернативы, не выбраны',
@@ -31,14 +31,14 @@ const labels = {
     copy: 'Копировать JSON', download: 'Скачать JSON', copied: 'Трассировка скопирована', copyError: 'Копирование недоступно. Скачайте JSON.',
     technical: 'Технические поля', exportNote: 'Телефон, ИИН, email и персональные поля замаскированы. Секреты и внутренние ошибки исключены.',
     stats: 'Метрики текущей сессии', voiceMedian: 'Первый звук: медиана голоса', textMedian: 'Первый звук: медиана текста', serverMedian: 'Медиана сервера', routerMedian: 'Медиана маршрутизатора', samples: 'замеров',
-    statsHelp: 'Только полученные замеры; отсутствие звука не считается нулевой задержкой. Это не оценка точности маршрутизации.', previewMetrics: 'Иллюстративные значения примера, не результат замера.',
+    statsHelp: 'Только полученные замеры; отсутствие звука не считается нулевой задержкой. Это не оценка точности маршрутизации.',
     calls: 'Реплик', clarifications: 'Уточнений', handoffs: 'Передач оператору', errors: 'Реплик с ошибкой', mixed: 'Смешанный', unknownLanguage: 'Не определён',
-    providedStatus: 'Статус сервера', profile: 'Профиль', user: 'Клиент', confirmed_by_user: 'Подтверждено клиентом', errorState: 'Ошибка', demo: 'Пример',
+    providedStatus: 'Статус сервера', profile: 'Профиль', user: 'Клиент', confirmed_by_user: 'Подтверждено клиентом', errorState: 'Ошибка',
     stage: 'Этап сервера', idle: 'Ожидает реплику', listening: 'Слушает', transcribing: 'Распознаёт речь', routing: 'Выбирает маршрут', identifying: 'Уточняет клиента', collecting_slots: 'Собирает данные', executing_action: 'Выполняет действие', responding: 'Готовит ответ', speaking: 'Воспроизводит ответ',
     queued: 'В очереди', connected: 'Соединён', transferred: 'Передан', cancelled: 'Отменён', pendingStatus: 'Ожидается', assigned: 'Назначен',
   },
   kk: {
-    eyebrow: 'СУПЕРВАЙЗЕР ПАНЕЛІ', title: 'Шешімнің трассасы', subtitle: 'Әр репликаның бағыты, әрекеттері және өлшемдері',
+    title: 'Трассировка панелі',
     turn: 'Реплика', empty: 'Шешім осы жерде көрсетіледі', emptyHelp: 'Әңгімені бастаңыз. Жауаптан кейін бағыт пен әрекеттерді тексеруге болады.',
     unknown: 'Сервер жібермеді', none: 'Жоқ', transcript: 'Соңғы транскрипт', restored: 'Сессияның қысқаша күйі қалпына келтірілді. Толық транскрипт қолжетімсіз болуы мүмкін.',
     primary: 'Таңдалған негізгі сценарий', additional: 'Қосымша ниеттер', active: 'Белсенді сценарий', alternatives: 'Таңдалмаған баламалар',
@@ -61,9 +61,9 @@ const labels = {
     copy: 'JSON көшіру', download: 'JSON жүктеу', copied: 'Трасса көшірілді', copyError: 'Көшіру қолжетімсіз. JSON жүктеңіз.',
     technical: 'Техникалық өрістер', exportNote: 'Телефон, ЖСН, email және жеке өрістер жасырылды. Құпиялар мен ішкі қателер алынып тасталды.',
     stats: 'Ағымдағы сессия өлшемдері', voiceMedian: 'Алғашқы дыбыс: дауыс медианасы', textMedian: 'Алғашқы дыбыс: мәтін медианасы', serverMedian: 'Сервер медианасы', routerMedian: 'Бағыттауыш медианасы', samples: 'өлшем',
-    statsHelp: 'Тек алынған өлшемдер. Дыбыстың болмауы нөлдік кідіріс емес. Бұл бағыттау дәлдігінің бағасы емес.', previewMetrics: 'Мысалдағы мәндер тек көрнекі, өлшем нәтижесі емес.',
+    statsHelp: 'Тек алынған өлшемдер. Дыбыстың болмауы нөлдік кідіріс емес. Бұл бағыттау дәлдігінің бағасы емес.',
     calls: 'Репликалар', clarifications: 'Нақтылаулар', handoffs: 'Операторға берулер', errors: 'Қатесі бар репликалар', mixed: 'Аралас', unknownLanguage: 'Анықталмады',
-    providedStatus: 'Сервер күйі', profile: 'Профиль', user: 'Клиент', confirmed_by_user: 'Клиент растады', errorState: 'Қате', demo: 'Мысал',
+    providedStatus: 'Сервер күйі', profile: 'Профиль', user: 'Клиент', confirmed_by_user: 'Клиент растады', errorState: 'Қате',
     stage: 'Сервер кезеңі', idle: 'Реплика күтілуде', listening: 'Тыңдауда', transcribing: 'Сөйлеуді тануда', routing: 'Бағыт таңдауда', identifying: 'Клиентті нақтылауда', collecting_slots: 'Деректер жинауда', executing_action: 'Әрекет орындалуда', responding: 'Жауап дайындалуда', speaking: 'Жауап ойнатылуда',
     queued: 'Кезекте', connected: 'Қосылды', transferred: 'Берілді', cancelled: 'Бас тартылды', pendingStatus: 'Күтілуде', assigned: 'Тағайындалды',
   },
@@ -105,14 +105,14 @@ function Latency({ turn, t }: { turn: Turn; t: Copy }) {
   </section>;
 }
 
-export function SessionMetrics({ turns, language, preview = false }: { turns: Turn[]; language: UiLanguage; preview?: boolean }) {
+export function SessionMetrics({ turns, language }: { turns: Turn[]; language: UiLanguage }) {
   const t = labels[language];
-  const metrics = getSessionMetrics(preview ? [] : turns);
-  return <details className="sv-session-metrics"><summary><Clock3 size={16} />{t.stats}<span>{preview ? t.demo : `${metrics.turns} ${t.calls.toLowerCase()}`}</span></summary>
-    {preview ? <p className="sv-help">{t.previewMetrics}</p> : <><dl className="sv-session-timings">{([
+  const metrics = getSessionMetrics(turns);
+  return <details className="sv-session-metrics"><summary><Clock3 size={16} />{t.stats}<span>{`${metrics.turns} ${t.calls.toLowerCase()}`}</span></summary>
+    <dl className="sv-session-timings">{([
       [t.voiceMedian, metrics.voiceFirstAudio], [t.textMedian, metrics.textFirstAudio], [t.serverMedian, metrics.serverTotal], [t.routerMedian, metrics.router],
     ] as const).map(([label, metric]) => <div key={label}><dt>{label}</dt><dd><strong>{ms(metric.median)}</strong><span>{metric.count} {t.samples}</span></dd></div>)}</dl>
-      <p className="sv-session-counts">{t.clarifications}: {metrics.clarifications} · {t.handoffs}: {metrics.handoffs} · {t.errors}: {metrics.errors}</p><p className="sv-help">{t.statsHelp}</p></>}
+      <p className="sv-session-counts">{t.clarifications}: {metrics.clarifications} · {t.handoffs}: {metrics.handoffs} · {t.errors}: {metrics.errors}</p><p className="sv-help">{t.statsHelp}</p>
   </details>;
 }
 
@@ -149,8 +149,8 @@ export function SupervisorPanel({ turn, turns, selectedId, onSelect, catalog, la
     const link = document.createElement('a'); link.href = url; link.download = `voice-router-trace-${visibleTurn.id.replace(/[^\w-]/g, '').slice(0, 64)}.json`; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  return <aside className="supervisor-panel rich-supervisor" aria-label={t.eyebrow}>
-    <div className="supervisor-topline"><div><p className="eyebrow">{t.eyebrow}</p><h2>{t.title}</h2><p>{t.subtitle}</p></div><Activity size={20} aria-hidden="true" /></div>
+  return <aside className="supervisor-panel rich-supervisor" aria-label={t.title}>
+    <div className="supervisor-topline"><h2>{t.title}</h2></div>
     {turns.length > 0 && <><details className="sv-filters"><summary><Filter size={14} />{t.filters}<span>{filtered.length}/{turns.length}</span></summary><div className="sv-filter-fields">
       <label>{t.language}<select value={filters.language} onChange={event => changeFilters({ ...filters, language: event.target.value })}><option value="">{t.all}</option><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="mixed">{t.mixed}</option><option value="unknown">{t.unknownLanguage}</option></select></label>
       <label>{t.scenario}<select value={filters.scenario} onChange={event => changeFilters({ ...filters, scenario: event.target.value })}><option value="">{t.all}</option>{usedScenarios.map(id => <option key={id} value={id}>{id}</option>)}</select></label>

@@ -1,19 +1,8 @@
-.workspace-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; }
-.workspace-navigation button { border: 1px solid #cad9d1; border-radius: 9px; background: white; color: #385649; padding: 10px 16px; min-height: 44px; font-size: 13px; font-weight: 700; }
+.workspace-navigation { display: flex; flex: 1; justify-content: center; min-width: 0; gap: 8px; margin: 0; padding: 4px; overflow-x: auto; }
+.workspace-navigation button { flex-shrink: 0; border: 1px solid #cad9d1; border-radius: 9px; background: white; color: #385649; padding: 9px 14px; min-height: 40px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .workspace-navigation button[aria-current="page"] { background: var(--green); border-color: var(--green); color: white; }
-.lab-panel { border: 1px solid var(--line); background: white; border-radius: 20px; padding: 28px; line-height: 1.6; }
-.lab-panel h2 { margin-top: 0; font-size: 24px; letter-spacing: -.03em; }
-.lab-panel p { font-size: 14px; color: #486154; max-width: 90ch; }
-.lab-panel .lab-error { color: #a03822; }
-.lab-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 22px; margin: 24px 0; }
-.lab-panel label { display: flex; flex-direction: column; gap: 7px; font-size: 14px; }
-.lab-panel select { padding: 10px; border: 1px solid #bccfc3; border-radius: 8px; background: white; color: var(--text); }
-.lab-panel .lab-check { flex-direction: row; align-items: center; }
-.lab-panel meter { width: 100%; height: 20px; accent-color: var(--green); }
-.lab-panel input[type="range"] { width: 100%; accent-color: var(--green); }
-.lab-panel hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
-.lab-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
-.lab-actions button { padding: 10px 14px; min-height: 44px; border-radius: 9px; border: 1px solid #afc8b9; color: #075d48; background: #f0f8f4; }
-.lab-numbers { font-variant-numeric: tabular-nums; }
 textarea:focus-visible { outline: 2px solid #006c50; outline-offset: 3px; }
-@media(max-width:600px) { .lab-panel { padding: 18px; }.lab-form-grid { grid-template-columns: 1fr; }.workspace-navigation button { flex: 1 1 auto; padding-inline: 10px; }.lab-panel select { font-size: 16px; } }
+@media(max-width:600px) {
+  .workspace-navigation { flex-wrap: wrap; overflow: visible; }
+  .workspace-navigation button { flex: 1 1 auto; padding-inline: 10px; white-space: normal; }
+}
