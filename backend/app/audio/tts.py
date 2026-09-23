@@ -22,9 +22,10 @@ class Synthesizer:
         model: str = "gpt-4o-mini-tts",
         voice: str = "coral",
         timeout: float = 30.0,
-        chunk_size: int = 4096,
+        chunk_size: int | None = None,
     ) -> None:
         self._client = client
+        self._owns_client = client is None
         self._model = model
         self._voice = voice
         self._timeout = timeout
@@ -38,7 +39,7 @@ class Synthesizer:
         if client is None:
             from openai import AsyncOpenAI
 
-            client = AsyncOpenAI()
+            client = self._client = AsyncOpenAI()
         instructions = _LANGUAGE_INSTRUCTIONS.get(language, "Speak naturally in the language of the input.")
         trailing_byte = b""
         async with asyncio.timeout(self._timeout):
@@ -57,3 +58,10 @@ class Synthesizer:
                     trailing_byte = samples[complete_length:]
                 if trailing_byte:
                     raise ValueError("TTS returned an incomplete PCM16 sample")
+
+    async def aclose(self) -> None:
+        """Close only the SDK client created by this synthesizer."""
+        if self._owns_client and self._client is not None:
+            client = self._client
+            self._client = None
+            await client.close()

@@ -146,6 +146,37 @@ async def test_synthesizer_uses_real_sdk_stream_contract():
     assert b"".join(chunks) == pcm
 
 
+@pytest.mark.asyncio
+async def test_synthesizer_yields_first_small_pcm_chunk_before_upstream_eof():
+    """A short first audio frame must reach playback while the provider stays open."""
+    import httpx
+    from openai import AsyncOpenAI
+
+    release_eof = asyncio.Event()
+    first_sent = asyncio.Event()
+
+    class SlowPCM(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            first_sent.set()
+            yield b"\x01\x00"
+            await release_eof.wait()
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, headers={"content-type": "audio/pcm"}, stream=SlowPCM(),
+    ))
+    async with AsyncOpenAI(api_key="offline-test-key", max_retries=0,
+                           http_client=httpx.AsyncClient(transport=transport)) as client:
+        stream = Synthesizer(client=client).stream("Сәлем", "kk")
+        try:
+            first = await asyncio.wait_for(anext(stream), timeout=0.2)
+            assert first == b"\x01\x00"
+            assert first_sent.is_set()
+            assert not release_eof.is_set()
+        finally:
+            release_eof.set()
+            await stream.aclose()
+
+
 class FakeSpeech:
     def __init__(self, chunks):
         self.chunks = chunks
