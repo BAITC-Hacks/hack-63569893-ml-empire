@@ -56,6 +56,8 @@ These small sequential samples are smoke tests, not a p95 benchmark. After deplo
 
 The first application turn exposed about 1305 ms outside routing/TTS from lazy runtime loading. A follow-up change moves default graph assembly into application startup without making provider requests. The two sets above are representative smoke requests, not an identical paired workload; only the 104-case router comparison used exactly the same labeled inputs. TTS startup is network-dependent and is not uniformly faster in these few observations.
 
+After rebuilding/restarting with graph prewarm, the first office-RU turn returned SC33 without errors: router 2794 ms, first TTS PCM 904 ms, first server PCM 3732 ms. Time outside routing and TTS was **34 ms**, versus about 1305 ms before prewarm. The final running container is healthy; router, WebSocket, TTS and main module source hashes were checked against the local source. Changes are merged into local `main`; nothing was pushed.
+
 A full synthetic voice turn (generated office question, 156000 PCM bytes, no saved audio) also passed through frontend proxy → real STT → graph → real TTS, producing SC33 without errors. Final-STT-to-first-PCM was **3131 ms**: router 2059 ms and TTS startup 1040 ms. STT finalization itself took 3957 ms. The client observed 8303 ms from `turn.commit` to the first returned PCM, including queued transport/input processing; this is not an end-of-human-speech measurement. No real microphone recording was made.
 
 ## Verification
