@@ -13,13 +13,13 @@
 .sv-section h3 svg { flex-shrink: 0; color: #087a5a; }
 .sv-section > p { margin: 8px 0 0; }
 .sv-transcript > p { color: #294938; font-size: 13px; white-space: pre-wrap; }
-.sv-muted { color: #697c70; font-size: 12px; }
-.sv-help { color: #64796b; font-size: 11px; line-height: 1.6; margin: 10px 0 0; }
+.sv-muted { color: #506859; font-size: 12px; }
+.sv-help { color: #506859; font-size: 11px; line-height: 1.6; margin: 10px 0 0; }
 .sv-scenario { margin-top: 12px; }
 .sv-scenario + .sv-scenario { padding-top: 12px; border-top: 1px solid #dfe8e2; }
 .sv-scenario-title { display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; }
 .sv-scenario-title strong { font-size: 13px; min-width: 0; }
-.sv-scenario-title code { color: #007e5c; font-size: 11px; flex-shrink: 0; }
+.sv-scenario-title code { color: #006c50; font-size: 11px; flex-shrink: 0; }
 .sv-scenario-focus .sv-scenario-title strong { font-size: 16px; line-height: 1.4; }
 .sv-scenario p { margin: 8px 0 0; color: #4f6858; }
 .sv-scenario .sv-confidence { font-size: 11px; }
@@ -30,14 +30,14 @@
 .sv-active { background: #e7f2eb; margin: 0 -11px; padding-left: 11px; padding-right: 11px; border-radius: 9px; border: 1px solid #d3e7da; }
 .sv-pairs { display: grid; gap: 8px; margin: 12px 0 0; }
 .sv-pairs > div { display: grid; grid-template-columns: minmax(85px, .7fr) minmax(0, 1.3fr); gap: 12px; }
-.sv-pairs dt { color: #637d6c; }
+.sv-pairs dt { color: #506859; }
 .sv-pairs dd { margin: 0; color: #2f523c; overflow-wrap: anywhere; }
 .sv-slots { margin: 0; }
 .sv-slots > div { display: grid; grid-template-columns: minmax(80px, .8fr) minmax(0, 1.2fr); gap: 10px; padding: 11px 0; border-bottom: 1px solid #e0e7e2; }
 .sv-slots > div:last-child { border-bottom: 0; }
 .sv-slots dt { color: #466c54; overflow-wrap: anywhere; }
 .sv-slots dd { display: grid; gap: 5px; margin: 0; overflow-wrap: anywhere; }
-.sv-slots dd span { font-size: 10px; color: #617a6a; }
+.sv-slots dd span { font-size: 10px; color: #506859; }
 .sv-actions { list-style: decimal; margin: 0; padding-left: 20px; }
 .sv-actions li { padding: 10px 0 14px 4px; }
 .sv-actions li::marker { color: #799481; font-size: 11px; }
@@ -75,14 +75,14 @@
 .sv-copy-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #216842; }
 .sv-session-metrics { margin: 18px 0 0; padding: 0 16px; border: 1px solid #dce8e0; border-radius: 12px; background: #f1f6f3; color: #3f624c; }
 .sv-session-metrics > summary { display: flex; align-items: center; gap: 9px; cursor: pointer; min-height: 48px; font-size: 12px; font-weight: 700; }
-.sv-session-metrics > summary > span { margin-left: auto; color: #667f6e; font-size: 11px; font-weight: 500; }
+.sv-session-metrics > summary > span { margin-left: auto; color: #506859; font-size: 11px; font-weight: 500; }
 .sv-session-metrics > .sv-help { margin: 0 0 15px; }
 .sv-session-timings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 26px; margin: 10px 0 18px; }
 .sv-session-timings > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .sv-session-timings dt { font-size: 12px; }
 .sv-session-timings dd { display: grid; text-align: right; margin: 0; flex-shrink: 0; }
 .sv-session-timings strong { font-size: 13px; font-variant-numeric: tabular-nums; }
-.sv-session-timings span { font-size: 10px; color: #6a7d70; margin-top: 2px; }
+.sv-session-timings span { font-size: 10px; color: #506859; margin-top: 2px; }
 .sv-session-counts { font-size: 11px; }
 .rich-supervisor summary:focus-visible, .sv-session-metrics summary:focus-visible { outline: 3px solid #59b58d; outline-offset: 4px; border-radius: 5px; }
 @media (max-width: 1100px) {

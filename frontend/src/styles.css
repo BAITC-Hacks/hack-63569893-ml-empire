@@ -12,7 +12,7 @@
   --green-deep: #075d48;
   --mint: #6af89a;
   --text: #13221e;
-  --muted: #75827e;
+  --muted: #596d62;
   --line: #e6ece9;
   --surface: #f3f6f5;
 }
@@ -41,7 +41,7 @@ select { font: inherit; max-width: 100%; }
 .header-nav span { display: inline-flex; align-items: center; position: relative; }
 .header-nav .nav-active { color: var(--green); }
 .header-nav .nav-active::after { content: ''; position: absolute; bottom: -30px; height: 2px; width: 100%; left: 0; background: var(--green); }
-.nav-muted { color: #a2aca8; }
+.nav-muted { color: #596d62; }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .header-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 37px; border-radius: 9px; font-size: 12px; font-weight: 700; }
 .language-button { color: #25332f; background: #f4f6f6; border: 1px solid #eef0ef; padding: 0 11px; }
@@ -52,7 +52,7 @@ select { font: inherit; max-width: 100%; }
 .page-intro { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 27px; }
 .eyebrow { margin: 0 0 10px; color: #00805f; letter-spacing: .13em; font-size: 10px; font-weight: 800; }
 .page-intro h1 { margin: 0; font-size: 31px; line-height: 1.22; letter-spacing: -.052em; font-weight: 800; }
-.page-intro p:last-child { margin: 9px 0 0; color: #76847e; font-size: 13px; line-height: 1.6; }
+.page-intro p:last-child { margin: 9px 0 0; color: #596d62; font-size: 13px; line-height: 1.6; }
 .status-pill { align-self: flex-start; flex-shrink: 0; margin-top: 8px; display: inline-flex; align-items: center; gap: 9px; padding: 9px 13px; color: #166b50; background: #ecfaf3; border: 1px solid #dcf3e7; border-radius: 999px; font-size: 11px; font-weight: 800; }
 .status-pill.is-offline { color: #73817b; background: #f0f3f1; border-color: #e5ebe7; }
 .status-pill.is-recording { color: #b4532b; background: #fff3ee; border-color: #ffe2d5; }
@@ -187,3 +187,10 @@ select { font: inherit; max-width: 100%; }
   .language-button > svg:first-child { display: none; }
   .header-new { padding-inline: 9px; }
 }
+
+/* Secondary copy remains readable on white and the tinted supervisor surface. */
+.status-pill.is-offline, .welcome-state > p, .empty-trace p,
+.turn-index, .message-language, .message-tools span, .reply-pending,
+.composer-foot, .page-footer, .supervisor-topline p:last-child { color: #506859; }
+.supervisor-panel .eyebrow { color: #006c50; }
+.mobile-tabs button:not(.is-active) { color: #506859; }
