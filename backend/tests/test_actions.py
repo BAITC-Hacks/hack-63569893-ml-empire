@@ -123,6 +123,40 @@ def test_malformed_phone_is_invalid_input(catalog):
     assert actions.call("create_callback", {"phone": "+7", "callback_time": "2026-10-02T10:00:00"})["error"]["code"] == "invalid_input"
 
 
+@pytest.mark.parametrize("country", [
+    "Austria", "Belgium", "Bulgaria", "Croatia", "Czechia", "Denmark", "Estonia",
+    "Finland", "France", "Germany", "Greece", "Hungary", "Iceland", "Italy",
+    "Latvia", "Liechtenstein", "Lithuania", "Luxembourg", "Malta", "Netherlands",
+    "Norway", "Poland", "Portugal", "Romania", "Slovakia", "Slovenia", "Spain",
+    "Sweden", "Switzerland", "United Kingdom",
+])
+def test_schengen_country_uses_zone_b(catalog, country):
+    actions = ActionEngine(catalog).new_session("call-1")
+    result = actions.call("calc_travel_price", {
+        "trip_country": country, "trip_start": "2026-10-01", "trip_end": "2026-10-03",
+        "travelers_count": 1, "traveler_max_age": 30,
+    })
+    assert result == {"price": 2700, "zone": "B", "coverage": "30 000 EUR"}
+
+
+def test_unrecognized_travel_country_is_invalid_input(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    result = actions.call("calc_travel_price", {
+        "trip_country": "Finlnd", "trip_start": "2026-10-01", "trip_end": "2026-10-03",
+        "travelers_count": 1, "traveler_max_age": 30,
+    })
+    assert result["error"]["code"] == "invalid_input"
+
+
+def test_casco_lite_older_than_pricing_table_requires_operator(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    result = actions.call("calc_casco_price", {
+        "car_value": 4000000, "car_year": 2013, "franchise": 50000, "package": "Lite",
+    })
+    assert result["error"]["code"] == "not_eligible"
+    assert "operator" in result["error"]["message"].lower()
+
+
 @pytest.mark.parametrize("name", ["create_policy", "renew_policy", "update_policy", "cancel_policy", "create_claim", "create_dispute", "book_inspection", "book_appointment", "update_contact"])
 def test_irreversible_actions_reject_unconfirmed_calls(catalog, name):
     actions = ActionEngine(catalog).new_session("call-1")

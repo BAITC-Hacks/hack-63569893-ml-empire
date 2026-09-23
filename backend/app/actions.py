@@ -26,6 +26,31 @@ def _valid_phone(value):
     return isinstance(value, str) and re.fullmatch(r"\+7\d{10}", value) is not None
 
 
+TRAVEL_COUNTRIES = {
+    "A": {
+        "armenia", "azerbaijan", "belarus", "georgia", "kazakhstan", "kyrgyzstan",
+        "moldova", "russia", "tajikistan", "turkmenistan", "ukraine", "uzbekistan",
+    },
+    "B": {
+        "austria", "belgium", "bulgaria", "croatia", "czech republic", "czechia",
+        "denmark", "estonia", "finland", "france", "germany", "greece", "hungary",
+        "iceland", "italy", "latvia", "liechtenstein", "lithuania", "luxembourg",
+        "malta", "netherlands", "norway", "poland", "portugal", "romania",
+        "slovakia", "slovenia", "spain", "sweden", "switzerland", "uk",
+        "united kingdom", "great britain",
+    },
+    "C": {
+        "albania", "argentina", "australia", "bosnia and herzegovina", "brazil",
+        "china", "cyprus", "egypt", "india", "indonesia", "ireland", "israel",
+        "japan", "malaysia", "mexico", "montenegro", "morocco", "new zealand",
+        "north macedonia", "qatar", "saudi arabia", "serbia", "singapore",
+        "south africa", "south korea", "thailand", "tunisia", "turkey", "türkiye",
+        "uae", "united arab emirates", "vietnam",
+    },
+    "D": {"canada", "usa", "united states", "united states of america"},
+}
+
+
 class ActionEngine:
     def __init__(self, catalog):
         self.catalog = catalog
@@ -67,16 +92,18 @@ class SessionActions:
             return self._error("invalid_input", "Unknown action")
         if not isinstance(inputs, dict):
             return self._error("invalid_input", "Action inputs must be an object")
+        if action_id is not None and not _field(self.catalog.actions[name], "irreversible"):
+            return self._error("invalid_input", "Action ID belongs to an irreversible action")
         spec = self.catalog.actions[name]
         if _field(spec, "irreversible"):
             fingerprint = self._fingerprint(inputs)
             if action_id in self.completed:
                 saved_name, saved_fingerprint, result = self.completed[action_id]
-                if confirmed and saved_name == name and saved_fingerprint == fingerprint:
+                if confirmed is True and saved_name == name and saved_fingerprint == fingerprint:
                     return deepcopy(result)
                 return self._error("invalid_input", "Action confirmation does not match")
             pending = self.pending.get(action_id)
-            if not confirmed:
+            if confirmed is not True:
                 if pending and pending.name == name:
                     self.pending.pop(action_id)
                 return self._error("invalid_input", "Explicit confirmation required")
@@ -114,8 +141,8 @@ class SessionActions:
         return self._find("policies", policy_number=inputs.get("policy_number"))
 
     def _status(self, policy):
-        if policy.get("status") == "cancelled":
-            return "cancelled"
+        if policy.get("status") in {"cancelled", "pending_payment"}:
+            return policy["status"]
         today = date.fromisoformat(self.catalog.mock_backend["meta"]["as_of_date"])
         if date.fromisoformat(policy["start_date"]) > today:
             return "pending"
@@ -127,6 +154,8 @@ class SessionActions:
             return None, self._error("not_found", "Policy not found")
         if self._status(policy) != "active":
             return None, self._error("policy_inactive", "Policy is not active")
+        if policy["product"] == "dms" and policy.get("details", {}).get("package") not in self.catalog.knowledge_base["products"]["dms"]["packages"]:
+            return None, self._error("policy_inactive", "DMS package is missing")
         return policy, None
 
     def _new_id(self, prefix, collection):
@@ -202,7 +231,9 @@ class SessionActions:
             return self._error("invalid_input", "Invalid CASCO pricing inputs")
         if age > pricing["max_car_age"][package]:
             return self._error("not_eligible", "Car exceeds maximum age")
-        rate = pricing["rate_by_car_age"]["0-3" if age <= 3 else "4-7" if age <= 7 else "8-10"] if age <= 10 else pricing["rate_by_car_age"]["8-10"]
+        if age > 10:
+            return self._error("not_eligible", "No published rate for this car age; contact an operator")
+        rate = pricing["rate_by_car_age"]["0-3" if age <= 3 else "4-7" if age <= 7 else "8-10"]
         return {"price": round(value * rate * pricing["franchise_coef"][franchise] * pricing["package_coef"][package])}
 
     def _do_calc_travel_price(self, inputs):
@@ -219,14 +250,9 @@ class SessionActions:
             return self._error("invalid_input", "Invalid travel pricing inputs")
         if age > 75:
             return self._error("not_eligible", "Travelers over 75 require an operator")
-        if country in {"russia", "belarus", "kyrgyzstan", "uzbekistan", "tajikistan", "armenia", "azerbaijan", "georgia", "moldova"}:
-            zone = "A"
-        elif country in {"germany", "france", "italy", "spain", "uk", "united kingdom", "netherlands", "switzerland", "poland", "czech republic", "austria"}:
-            zone = "B"
-        elif country in {"usa", "united states", "canada"}:
-            zone = "D"
-        else:
-            zone = "C"
+        zone = next((zone for zone, countries in TRAVEL_COUNTRIES.items() if country in countries), None)
+        if zone is None:
+            return self._error("invalid_input", "Unrecognized travel country; contact an operator")
         details = kb["zones"][zone]
         return {"price": round(details["rate_per_day_kzt"] * ((end - start).days + 1) * travelers * (2 if age >= 65 else 1)), "zone": zone, "coverage": details["coverage"]}
 
@@ -249,12 +275,18 @@ class SessionActions:
         product, phone = inputs.get("product_type"), inputs.get("phone")
         if product not in self.catalog.knowledge_base["products"] or not _valid_phone(phone):
             return self._error("invalid_input", "Product and valid phone are required")
+        details = {}
+        if product == "dms":
+            package = inputs.get("package")
+            if package not in self.catalog.knowledge_base["products"]["dms"]["packages"]:
+                return self._error("invalid_input", "Valid DMS package is required")
+            details["package"] = package
         client = self._find("clients", phone=phone)
         number = self._new_id(f"SQ-{product.upper()}", "policies")
         today = date.fromisoformat(self.state["meta"]["as_of_date"])
         self.state["policies"].append({"policy_number": number, "client_id": client["client_id"] if client else None,
             "product": product, "start_date": today.isoformat(), "end_date": (today + timedelta(days=364)).isoformat(),
-            "premium": inputs.get("price"), "details": {}, "status": "pending_payment"})
+            "premium": inputs.get("price"), "details": details, "status": "pending_payment"})
         self.state.setdefault("sms", []).append({"phone": phone, "kind": "payment_link", "policy_number": number})
         return {"policy_number": number}
 
@@ -282,15 +314,25 @@ class SessionActions:
         changes = {key: inputs[key] for key in ("add_driver_iin", "vehicle_plate", "vehicle") if inputs.get(key)}
         if not changes:
             return self._error("invalid_input", "A policy change is required")
-        if "add_driver_iin" in changes:
-            drivers = policy["details"].setdefault("drivers_iin", [])
-            if changes["add_driver_iin"] not in drivers:
-                drivers.append(changes["add_driver_iin"])
-        for key in ("vehicle_plate", "vehicle"):
-            if key in changes:
-                policy["details"][key] = changes[key]
-        extra = round((policy.get("premium") or 0) * 0.1)
-        policy["premium"] = (policy.get("premium") or 0) + extra
+        if policy["product"] != "ogpo" or "vehicle" in changes or "vehicle_plate" in changes:
+            return self._error("invalid_input", "No published change price; contact an operator")
+        details = policy["details"]
+        drivers = list(details.get("drivers_iin", []))
+        new_driver = changes.get("add_driver_iin")
+        if not drivers or not isinstance(new_driver, str) or len(new_driver) != 12 or not new_driver.isdigit():
+            return self._error("invalid_input", "Valid additional driver IIN is required")
+        if new_driver not in drivers:
+            drivers.append(new_driver)
+        plate = details.get("vehicle_plate", "")
+        pricing = self.catalog.knowledge_base["products"]["ogpo"]["pricing"]
+        region = pricing["region_by_plate_code"].get(plate[-2:], pricing["region_by_plate_code"]["default"])
+        quote = self._do_calc_ogpo_price({"region": region, "vehicle_type": details.get("vehicle_type"),
+            "drivers_iin": drivers, "term_months": details.get("term_months", 12)})
+        if "error" in quote or not isinstance(policy.get("premium"), (int, float)):
+            return self._error("invalid_input", "No published change price; contact an operator")
+        extra = max(0, quote["price"] - policy["premium"])
+        details["drivers_iin"] = drivers
+        policy["premium"] = quote["price"]
         return {"extra_premium": extra}
 
     def _do_cancel_policy(self, inputs):

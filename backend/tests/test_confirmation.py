@@ -109,3 +109,81 @@ def test_confirmed_create_policy_rejects_malformed_phone_without_mutating(catalo
     pending = actions.preview("create_policy", inputs)
     assert actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)["error"]["code"] == "invalid_input"
     assert actions.count("policies") == 11
+
+
+def test_completed_action_id_cannot_be_reused_for_reversible_action(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"product_type": "ogpo", "phone": "+77010000001"}
+    pending = actions.preview("create_policy", inputs)
+    assert "policy_number" in actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)
+    before = actions.count("sms")
+    result = actions.call("send_sms", {"phone": "+77010000002"}, action_id=pending.action_id)
+    assert result["error"]["code"] == "invalid_input"
+    assert actions.count("sms") == before
+
+
+def test_pending_action_id_cannot_be_reused_for_reversible_action(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    pending = actions.preview("create_policy", {"product_type": "ogpo", "phone": "+77010000001"})
+    result = actions.call("send_sms", {"phone": "+77010000002"}, action_id=pending.action_id)
+    assert result["error"]["code"] == "invalid_input"
+    assert actions.count("sms") == 0
+
+
+@pytest.mark.parametrize("confirmation", ["false", "true", 1, None])
+def test_confirmation_must_be_boolean_true(catalog, confirmation):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"product_type": "ogpo", "phone": "+77010000001"}
+    pending = actions.preview("create_policy", inputs)
+    result = actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=confirmation)
+    assert result["error"]["code"] == "invalid_input"
+    assert actions.count("policies") == 11
+
+
+def test_new_dms_policy_stays_pending_and_has_validated_package(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"product_type": "dms", "phone": "+77010000002", "package": "Comfort"}
+    pending = actions.preview("create_policy", inputs)
+    number = actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)["policy_number"]
+    policy = actions.call("get_policy", {"policy_number": number})
+    assert policy["status"] == "pending_payment"
+    assert policy["details"]["package"] == "Comfort"
+    assert actions.call("check_coverage", {"policy_number": number, "service_name": "lab tests"})["error"]["code"] == "policy_inactive"
+
+
+def test_create_dms_policy_without_package_does_not_create_incomplete_record(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"product_type": "dms", "phone": "+77010000002"}
+    pending = actions.preview("create_policy", inputs)
+    result = actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)
+    assert result["error"]["code"] == "invalid_input"
+    assert actions.count("policies") == 11
+
+
+def test_update_policy_without_kb_change_price_does_not_mutate(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"policy_number": "SQ-CASCO-204118", "vehicle_plate": "999XYZ02"}
+    before = json.dumps(actions.state, sort_keys=True)
+    pending = actions.preview("update_policy", inputs)
+    result = actions.call("update_policy", inputs, action_id=pending.action_id, confirmed=True)
+    assert result["error"]["code"] == "invalid_input"
+    assert "operator" in result["error"]["message"].lower()
+    assert json.dumps(actions.state, sort_keys=True) == before
+
+
+def test_ogpo_driver_change_uses_kb_premium_difference(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"policy_number": "SQ-OGPO-104501", "add_driver_iin": "920607400233"}
+    pending = actions.preview("update_policy", inputs)
+    assert actions.call("update_policy", inputs, action_id=pending.action_id, confirmed=True) == {"extra_premium": 7600}
+    policy = actions.call("get_policy", {"policy_number": "SQ-OGPO-104501"})
+    assert policy["premium"] == 38000
+    assert policy["details"]["drivers_iin"] == ["850314300121", "920607400233"]
+
+
+def test_incomplete_active_dms_policy_returns_declared_error(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    policy = next(p for p in actions.state["policies"] if p["product"] == "dms")
+    policy["details"] = {}
+    result = actions.call("check_coverage", {"policy_number": policy["policy_number"], "service_name": "lab tests"})
+    assert result["error"]["code"] == "policy_inactive"
