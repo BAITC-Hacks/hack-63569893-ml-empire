@@ -10,11 +10,20 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from app.api.contracts import AUDIO_FORMAT, ClientEvent, frontend_status, redact
+from app.audio.stt import TranscriptionError, transcription_error_code
 from app.sessions import TurnRejected
 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def log_stt_failure(stage, exc, audio_bytes, frames):
+    # PCM16 mono at 24 kHz is 48 bytes/ms. Never log audio, text or raw errors.
+    logger.warning(
+        "STT failed stage=%s code=%s audio_bytes=%d audio_ms=%.1f frames=%d",
+        stage, transcription_error_code(exc), audio_bytes, audio_bytes / 48, frames,
+    )
 
 
 @router.websocket("/api/v1/sessions/{session_id}/stream")
@@ -34,6 +43,8 @@ async def stream(websocket: WebSocket, session_id: str):
     worker = None
     recording = None
     recording_turn = None
+    recording_bytes = 0
+    recording_frames = 0
     traces = {}
     audio_turn = None
     receiver = asyncio.current_task()
@@ -112,7 +123,7 @@ async def stream(websocket: WebSocket, session_id: str):
             if began:
                 emit("audio.end", turn_id, {})
 
-    async def process(turn_id, text=None, transcriber=None):
+    async def process(turn_id, text=None, transcriber=None, audio_bytes=0, audio_frames=0):
         start = perf_counter()
         final_sent = False
         route_sent = False
@@ -126,9 +137,10 @@ async def stream(websocket: WebSocket, session_id: str):
                     async with asyncio.timeout(25):
                         text = await transcriber.finish()
                     if not isinstance(text, str) or not text.strip():
-                        raise ValueError("Empty transcript")
+                        raise TranscriptionError("empty_transcript")
                     stt_ms = (perf_counter() - start) * 1000
-                except Exception:
+                except Exception as exc:
+                    log_stt_failure("finish", exc, audio_bytes, audio_frames)
                     error(turn_id, "stt_unavailable")
                     emit("turn.complete", turn_id, {"status": "error"})
                     return
@@ -198,10 +210,14 @@ async def stream(websocket: WebSocket, session_id: str):
                 if recording is None or len(pcm) % 2 or len(pcm) > 1024 * 1024:
                     error(recording_turn, "invalid_event")
                     continue
+                # Count accepted client audio, including a chunk whose upstream send fails.
+                recording_bytes += len(pcm)
+                recording_frames += 1
                 try:
                     async with asyncio.timeout(25):
                         await recording.feed(pcm)
-                except Exception:
+                except Exception as exc:
+                    log_stt_failure("feed", exc, recording_bytes, recording_frames)
                     error(recording_turn, "stt_unavailable")
                     emit("turn.complete", recording_turn, {"status": "error"})
                     session.release(recording_turn)
@@ -225,7 +241,8 @@ async def stream(websocket: WebSocket, session_id: str):
                 if recording is None or recording_turn != event.turn_id:
                     error(event.turn_id, "invalid_event")
                     continue
-                worker = asyncio.create_task(process(event.turn_id, transcriber=recording))
+                worker = asyncio.create_task(process(event.turn_id, transcriber=recording,
+                    audio_bytes=recording_bytes, audio_frames=recording_frames))
                 recording, recording_turn = None, None
                 continue
             try:
@@ -243,9 +260,12 @@ async def stream(websocket: WebSocket, session_id: str):
                         emit("transcript.partial", current_turn, {"text": text})
 
                 try:
+                    recording_bytes = 0
+                    recording_frames = 0
                     recording = websocket.app.state.transcriber_factory(on_partial=on_partial)
                     recording_turn = turn_id
-                except Exception:
+                except Exception as exc:
+                    log_stt_failure("init", exc, 0, 0)
                     session.release(turn_id)
                     error(turn_id, "stt_unavailable")
                     emit("turn.complete", turn_id, {"status": "error"})

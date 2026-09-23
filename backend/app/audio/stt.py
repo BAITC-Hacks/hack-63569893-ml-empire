@@ -14,8 +14,60 @@ import os
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
+
 
 _END = object()
+_SAFE_ERROR_CODES = frozenset({
+    "provider_error",
+    "missing_api_key",
+    "empty_transcript",
+    "invalid_api_key",
+    "input_audio_buffer_commit_empty",
+    "rate_limit_exceeded",
+})
+
+
+class TranscriptionError(RuntimeError):
+    """An STT failure containing only an explicitly approved diagnostic code."""
+
+    def __init__(self, code: object = "provider_error") -> None:
+        self.code = code if isinstance(code, str) and code in _SAFE_ERROR_CODES else "provider_error"
+        super().__init__(f"transcription failed: {self.code}")
+
+
+class EmptyAudioError(ValueError):
+    """No audio was received before committing this turn."""
+
+
+def transcription_error_code(exc: Exception) -> str:
+    """Classify an STT failure without reading messages, payloads, or secrets."""
+    if isinstance(exc, TranscriptionError):
+        return exc.code if isinstance(exc.code, str) and exc.code in _SAFE_ERROR_CODES else "provider_error"
+    if isinstance(exc, EmptyAudioError):
+        return "empty_audio"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, InvalidStatus):
+        status = exc.response.status_code
+        if status == 401:
+            return "http_401"
+        if status == 403:
+            return "http_403"
+        if status == 429:
+            return "http_429"
+        if isinstance(status, int) and 500 <= status < 600:
+            return "http_5xx"
+        return "handshake_error"
+    if isinstance(exc, InvalidHandshake):
+        return "handshake_error"
+    if isinstance(exc, ConnectionClosed):
+        return "connection_closed"
+    if isinstance(exc, OSError):
+        return "connection_error"
+    if isinstance(exc, ValueError):
+        return "invalid_audio"
+    return "internal_error"
 
 
 class Transcriber:
@@ -50,7 +102,7 @@ class Transcriber:
             return
         api_key = self._api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is required for live transcription")
+            raise TranscriptionError("missing_api_key")
         if self._connector is None:
             from websockets.asyncio.client import connect
 
@@ -115,7 +167,7 @@ class Transcriber:
         if self._finished:
             raise RuntimeError("transcription turn has already been committed")
         if self._socket is None:
-            raise ValueError("cannot transcribe an empty audio turn")
+            raise EmptyAudioError("cannot transcribe an empty audio turn")
         self._finished = True
         try:
             await self._send({"type": "input_audio_buffer.commit"})
@@ -194,8 +246,9 @@ class Transcriber:
                     if item_id == self._committed_id and self._final and not self._final.done():
                         self._final.set_result(transcript)
                 elif kind in {"error", "conversation.item.input_audio_transcription.failed"}:
-                    detail = event.get("error") or event
-                    raise RuntimeError(f"transcription failed: {detail}")
+                    error = event.get("error")
+                    code = error.get("code") if isinstance(error, dict) else None
+                    raise TranscriptionError(code)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

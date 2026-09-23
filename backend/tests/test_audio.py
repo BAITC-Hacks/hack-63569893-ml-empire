@@ -7,6 +7,7 @@ import json
 import pytest
 
 from app.audio import Synthesizer, Transcriber
+from app.audio import stt
 
 
 class FakeSocket:
@@ -182,8 +183,19 @@ async def test_synthesizer_keeps_pcm_samples_whole_across_provider_chunks():
 
 
 @pytest.mark.asyncio
-async def test_transcriber_surfaces_provider_error_and_closes_connection():
-    """An upstream error must fail finish promptly and release the socket."""
+@pytest.mark.parametrize("event_type", ["error", "conversation.item.input_audio_transcription.failed"])
+@pytest.mark.parametrize(("error_payload", "expected_code"), [
+    ({"code": "rate_limit_exceeded", "message": "PRIVATE_PROVIDER_MESSAGE"}, "rate_limit_exceeded"),
+    ({"code": "invalid_api_key", "message": "PRIVATE_PROVIDER_MESSAGE"}, "invalid_api_key"),
+    ({"code": "input_audio_buffer_commit_empty", "message": "PRIVATE_PROVIDER_MESSAGE"}, "input_audio_buffer_commit_empty"),
+    ({"code": "sk_private_code", "message": "PRIVATE_PROVIDER_MESSAGE"}, "provider_error"),
+    ({"code": ["sk_private_code"], "message": "PRIVATE_PROVIDER_MESSAGE"}, "provider_error"),
+    ({"message": "PRIVATE_PROVIDER_MESSAGE"}, "provider_error"),
+    ("PRIVATE_PROVIDER_MESSAGE", "provider_error"),
+    (None, "provider_error"),
+])
+async def test_transcriber_surfaces_only_allowlisted_provider_code_and_closes_connection(event_type, error_payload, expected_code):
+    """Raw messages and arbitrary codes must never escape through an STT error."""
     socket = FakeSocket()
 
     async def connect(*args, **kwargs):
@@ -193,10 +205,69 @@ async def test_transcriber_surfaces_provider_error_and_closes_connection():
     await transcriber.feed(b"\x00\x00")
     task = asyncio.create_task(transcriber.finish())
     await asyncio.sleep(0)
-    socket.emit({"type": "error", "error": {"message": "unavailable"}})
-    with pytest.raises(RuntimeError, match="unavailable"):
+    socket.emit({"type": event_type, "event_id": "PRIVATE_PROVIDER_MESSAGE", "error": error_payload})
+    with pytest.raises(RuntimeError) as caught:
         await task
+    assert "PRIVATE_PROVIDER_MESSAGE" not in str(caught.value)
+    assert "sk_private_code" not in str(caught.value)
+    assert getattr(caught.value, "code", None) == expected_code
     assert socket.closed
+
+
+@pytest.mark.asyncio
+async def test_transcriber_missing_key_has_safe_distinct_code(monkeypatch):
+    """Configuration failures must be distinguishable without exposing credentials."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    transcriber = Transcriber(api_key=None)
+    with pytest.raises(RuntimeError) as caught:
+        await transcriber.feed(b"\x00\x00")
+    assert getattr(caught.value, "code", None) == "missing_api_key"
+
+
+@pytest.mark.asyncio
+async def test_transcriber_empty_audio_has_distinct_safe_code():
+    """A missing audio turn must remain a ValueError and have its own diagnosis."""
+    transcriber = Transcriber(api_key="test-key")
+    with pytest.raises(ValueError) as caught:
+        await transcriber.finish()
+    assert stt.transcription_error_code(caught.value) == "empty_audio"
+
+
+@pytest.mark.parametrize(("error", "expected_code"), [
+    (stt.TranscriptionError("empty_transcript"), "empty_transcript"),
+    (stt.TranscriptionError("rate_limit_exceeded"), "rate_limit_exceeded"),
+    (stt.TranscriptionError("sk_private_code"), "provider_error"),
+    (TimeoutError("PRIVATE_PROVIDER_MESSAGE"), "timeout"),
+    (OSError("PRIVATE_PROVIDER_MESSAGE"), "connection_error"),
+    (ValueError("PRIVATE_PROVIDER_MESSAGE"), "invalid_audio"),
+    (RuntimeError("PRIVATE_PROVIDER_MESSAGE"), "internal_error"),
+])
+def test_transcription_error_code_never_uses_exception_message(error, expected_code):
+    """Diagnostics classify error types without exposing arbitrary exception text."""
+    assert stt.transcription_error_code(error) == expected_code
+
+
+@pytest.mark.parametrize(("status", "expected_code"), [
+    (401, "http_401"), (403, "http_403"), (429, "http_429"),
+    (500, "http_5xx"), (503, "http_5xx"), (400, "handshake_error"),
+])
+def test_transcription_error_code_classifies_real_websocket_http_failures(status, expected_code):
+    """Only approved status categories survive provider rejection payloads."""
+    from websockets.datastructures import Headers
+    from websockets.exceptions import InvalidStatus
+    from websockets.http11 import Response
+
+    response = Response(status, "PRIVATE_PROVIDER_MESSAGE", Headers(), b"PRIVATE_PROVIDER_MESSAGE")
+    assert stt.transcription_error_code(InvalidStatus(response)) == expected_code
+
+
+def test_transcription_error_code_classifies_real_websocket_close_and_handshake():
+    """Transport diagnostics must not contain close reasons or handshake text."""
+    from websockets.exceptions import ConnectionClosed, InvalidHandshake
+    from websockets.frames import Close
+
+    assert stt.transcription_error_code(ConnectionClosed(Close(1011, "PRIVATE_PROVIDER_MESSAGE"), None)) == "connection_closed"
+    assert stt.transcription_error_code(InvalidHandshake("PRIVATE_PROVIDER_MESSAGE")) == "handshake_error"
 
 
 @pytest.mark.asyncio
