@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, ArrowRight, AudioLines, Check, CheckCircle2, CircleHelp, Clock3, Copy, Download, Filter, Headphones, ListChecks, ShieldCheck } from 'lucide-react';
+import { Activity, ArrowRight, AudioLines, Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, Copy, Download, Filter, Headphones, ListChecks, ShieldCheck } from 'lucide-react';
 import type { CatalogItem, Scenario, Turn } from '../types';
 import { asRecord, displayTraceValue, filterTurns, finiteTiming, getActions, getHandoff, getScenarioView, getSessionMetrics, getSlots, maskTraceValue, serializeTrace } from '../supervisor-model';
 import type { SlotView, TraceFilters } from '../supervisor-model';
@@ -108,7 +108,7 @@ function Latency({ turn, t }: { turn: Turn; t: Copy }) {
 export function SessionMetrics({ turns, language }: { turns: Turn[]; language: UiLanguage }) {
   const t = labels[language];
   const metrics = getSessionMetrics(turns);
-  return <details className="sv-session-metrics"><summary><Clock3 size={16} />{t.stats}<span>{`${metrics.turns} ${t.calls.toLowerCase()}`}</span></summary>
+  return <details className="sv-session-metrics"><summary><Clock3 size={16} aria-hidden="true" /><span className="sv-session-label">{t.stats}</span><span className="sv-session-total">{metrics.turns} {t.calls.toLowerCase()}</span><ChevronDown size={16} className="sv-session-chevron" aria-hidden="true" /></summary>
     <dl className="sv-session-timings">{([
       [t.voiceMedian, metrics.voiceFirstAudio], [t.textMedian, metrics.textFirstAudio], [t.serverMedian, metrics.serverTotal], [t.routerMedian, metrics.router],
     ] as const).map(([label, metric]) => <div key={label}><dt>{label}</dt><dd><strong>{ms(metric.median)}</strong><span>{metric.count} {t.samples}</span></dd></div>)}</dl>

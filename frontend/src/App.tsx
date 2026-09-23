@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownLeft, ArrowRight, AudioLines, Check,
   ChevronDown, CircleHelp, Clock3, Headphones, Headset, Languages, LoaderCircle,
@@ -11,6 +11,7 @@ import { SupervisorPanel, SessionMetrics } from './components/SupervisorPanel';
 import { MicrophoneSettings } from './components/MicrophoneSettings';
 import { displayTraceValue } from './supervisor-model';
 import { elapsedSeconds, errorText, formatDuration } from './client-state';
+import { ConversationPageFollow } from './conversation-page-follow';
 import './lab.css';
 import halykMark from './assets/halyk-mark.png';
 
@@ -108,28 +109,39 @@ export default function App() {
     dismissError, toggleMuted,
   } = useVoiceSession();
   const t = copy[language];
-  const conversationRef = useRef<HTMLDivElement>(null);
+  const conversationRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [draftRetry, setDraftRetry] = useState(false);
-  const wasNearBottomRef = useRef(true);
+  const pageFollowRef = useRef(new ConversationPageFollow());
   const selectedTurn = useMemo(() => turns.find((turn) => turn.id === selectedId) ?? turns.at(-1) ?? null, [turns, selectedId]);
 
   function endCall() {
     resetCall(); setTextInput(''); setMobileTab('conversation');
-    wasNearBottomRef.current = true;
   }
   function submitText(event?: React.FormEvent, override?: string) {
     event?.preventDefault();
-    if (sendText(override ?? textInput)) { setTextInput(''); setDraftRetry(false); }
-  }
-  function handleConversationScroll(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-    wasNearBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+    if (sendText(override ?? textInput)) { pageFollowRef.current.followSubmittedTurn(); setTextInput(''); setDraftRetry(false); }
   }
   useEffect(() => {
-    const element = conversationRef.current;
-    if (element && wasNearBottomRef.current) element.scrollTop = element.scrollHeight;
-  }, [turns]);
+    const observePagePosition = () => {
+      const panel = conversationRef.current;
+      const bounds = panel && panel.getClientRects().length > 0 ? panel.getBoundingClientRect() : null;
+      pageFollowRef.current.observe(bounds, window.innerHeight);
+    };
+    window.addEventListener('scroll', observePagePosition, { passive: true });
+    window.addEventListener('resize', observePagePosition);
+    observePagePosition();
+    return () => {
+      window.removeEventListener('scroll', observePagePosition);
+      window.removeEventListener('resize', observePagePosition);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const panel = conversationRef.current;
+    const bounds = panel && panel.getClientRects().length > 0 ? panel.getBoundingClientRect() : null;
+    const offset = pageFollowRef.current.update(turns, bounds, window.innerHeight);
+    if (offset > 0) window.scrollBy({ top: offset, behavior: 'instant' });
+  }, [turns, section, mobileTab]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
 
   const canInteract = connection === 'ready' && phase === 'idle' && !ended && !voiceStarting;
@@ -165,9 +177,9 @@ export default function App() {
       {session && !ended && connection === 'offline' && <div className="reconnect-notice"><WifiOff size={17} /><span>{t.offline}</span><button onClick={() => void reconnect()}>{t.reconnect}</button></div>}
       <div className="mobile-tabs" aria-label={t.conversationPanels}><button aria-pressed={mobileTab === 'conversation'} className={mobileTab === 'conversation' ? 'is-active' : ''} onClick={() => setMobileTab('conversation')}>{t.transcript}</button><button disabled={voiceStarting} aria-pressed={mobileTab === 'trace'} className={mobileTab === 'trace' ? 'is-active' : ''} onClick={() => setMobileTab('trace')}>{t.trace}</button></div>
       <div className={`workspace ${mobileTab === 'trace' ? 'show-trace' : ''}`}>
-        <section className="conversation-panel">
+        <section className="conversation-panel" ref={conversationRef}>
           <div className="panel-heading"><div className="panel-heading-title"><h2>{t.transcript}</h2></div><div className="panel-heading-right">{startedAt !== null && <CallTimer startedAt={startedAt} endedAt={endedAt} label={language === 'ru' ? 'Длительность звонка' : 'Қоңырау ұзақтығы'} />}{session && !ended && <button className="end-call" onClick={() => { finishCall(); setDraftRetry(false); }} aria-label={language === 'ru' ? 'Завершить звонок' : 'Қоңырауды аяқтау'} title={t.end}><PhoneOff size={16} />{t.end}</button>}{hasSession && !ended && <span role="status" className={`live-indicator ${connection !== 'ready' ? 'is-offline' : ''}`}><span />{connection === 'ready' ? t.ready : connection === 'offline' ? t.offline : t.connect}</span>}<MicrophoneSettings language={language} devices={devices} deviceId={deviceId} onDeviceChange={setDeviceId} micMode={micMode} onModeChange={setMicMode} disabled={phase !== 'idle' || voiceStarting} onRefreshDevices={refreshDevices} /></div></div>
-          <div className={`conversation-body ${turns.length === 0 ? 'is-empty' : ''}`} ref={conversationRef} onScroll={handleConversationScroll} tabIndex={0} role="region" aria-label={t.transcript}>
+          <div className={`conversation-body ${turns.length === 0 ? 'is-empty' : ''}`} role="region" aria-label={t.transcript}>
             {turns.length === 0 ? <div className="welcome-state"><button type="button" className="welcome-symbol" onClick={() => void beginVoiceCall()} disabled={voiceStartDisabled} aria-label={voiceStartLabel} title={voiceStartLabel} aria-busy={voiceStartBusy}>{voiceStartBusy ? <LoaderCircle className="welcome-spinner" size={38} strokeWidth={1.7} aria-hidden="true" /> : <Headset size={38} strokeWidth={1.7} aria-hidden="true" />}</button><h3>{t.headline}</h3><p role="status">{voiceStartBusy ? t.connect : session ? (micMode === 'hold' ? t.hold : language === 'ru' ? 'Нажмите, чтобы говорить' : 'Сөйлеу үшін басыңыз') : t.emptyConversation}</p><div className="welcome-actions">{!session && <button className="primary-button" onClick={() => void beginCall()} disabled={connection === 'connecting' || connection === 'reconnecting'}><Mic size={18} />{t.start}<ArrowRight size={17} /></button>}</div></div> : <div className="turn-list">
               {turns.map((turn, index) => <div className="turn-group" key={turn.id}>
                 <div className="turn-index"><span>{String(index + 1).padStart(2, '0')}</span><span>{new Date(turn.at).toLocaleTimeString(language === 'kk' ? 'kk-KZ' : 'ru-RU', { hour: '2-digit', minute: '2-digit' })}</span></div>
@@ -199,9 +211,11 @@ export default function App() {
             {phase === 'speaking' && <button className="stop-audio" onClick={stopPlayback}><Square size={13} />{language === 'ru' ? 'Остановить звук' : 'Дыбысты тоқтату'}</button>}
           </div>
         </section>
-        <SupervisorPanel turn={selectedTurn} turns={turns} selectedId={selectedId} onSelect={setSelectedId} catalog={catalog} language={language} />
+        <div className="supervisor-column">
+          <SessionMetrics turns={turns} language={language} />
+          <SupervisorPanel turn={selectedTurn} turns={turns} selectedId={selectedId} onSelect={setSelectedId} catalog={catalog} language={language} />
+        </div>
       </div>
-      <SessionMetrics turns={turns} language={language} />
       </>}
     </main>
   </div>;
