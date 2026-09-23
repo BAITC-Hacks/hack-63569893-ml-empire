@@ -120,14 +120,19 @@ select { font: inherit; max-width: 100%; }
 .recording-controls label { flex: 1; min-width: 0; color: #5a6e62; font-size: 12px; }
 .recording-controls meter { display: block; width: 100%; height: 12px; margin-top: 5px; accent-color: #00805f; }
 .stop-audio { margin-top: 10px; }
-.audio-settings { margin-top: 13px; font-size: 12px; color: #476757; }
-.audio-settings summary { cursor: pointer; min-height: 32px; align-content: center; }
-.audio-settings summary svg { vertical-align: middle; margin: 0 5px; }
-.audio-settings > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 0; }
-.audio-settings label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.audio-settings select { width: 100%; min-height: 38px; border: 1px solid #cfdcd4; border-radius: 8px; background: white; color: #273e31; padding: 7px; }
-.audio-settings button { border: 1px solid #cfdcd4; border-radius: 8px; color: #216246; background: #f2f8f4; min-height: 38px; }
-.audio-settings p { grid-column: 1 / -1; margin: 0; line-height: 1.6; color: #5d7064; }
+.mic-settings-trigger, .mic-settings-close { display: inline-grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); transition: background-color .18s ease-out, color .18s ease-out; }
+.mic-settings-trigger:hover, .mic-settings-trigger[aria-expanded="true"], .mic-settings-close:hover { background: oklch(96.5% 0.018 165); color: var(--green); }
+.mic-settings-dialog { width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid var(--line); border-radius: 22px; background: oklch(99.5% 0.003 165); color: var(--text); box-shadow: 0 24px 72px oklch(22% 0.025 165 / .2); overflow-y: auto; }
+.mic-settings-dialog::backdrop { background: oklch(20% 0.02 165 / .32); }
+.mic-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.mic-settings-heading h2 { margin: 0; color: var(--text); font-size: 20px; line-height: 1.3; letter-spacing: -.035em; }
+.mic-settings-fields { display: grid; gap: 18px; }
+.mic-settings-fields label { display: flex; flex-direction: column; gap: 8px; min-width: 0; color: var(--muted); font-size: 13px; font-weight: 600; }
+.mic-settings-fields select { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid oklch(87% 0.02 165); border-radius: 10px; color: var(--text); background: oklch(99.5% 0.003 165); font-size: 14px; }
+.mic-settings-fields select:disabled { cursor: not-allowed; opacity: .6; }
+.mic-settings-refresh { width: 100%; min-height: 44px; margin-top: 20px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 10px; color: var(--green-dark); background: var(--surface); font-size: 13px; font-weight: 700; }
+.mic-settings-refresh:hover:not(:disabled) { background: oklch(96.5% 0.018 165); }
+.mic-settings-help { margin: 16px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
 
 /* Keep controls available while each independent history panel scrolls. */
 .workspace { height: max(600px, calc(100dvh - 320px)); min-height: 600px; }
@@ -159,8 +164,7 @@ select { font: inherit; max-width: 100%; }
   .text-form input { font-size: 16px; padding-inline: 10px; }
   .header-actions button { min-height: 40px; }
   .message-tools button { min-height: 36px; }
-  .audio-settings select { font-size: 16px; }
-  .audio-settings > div { grid-template-columns: 1fr; }
+  .mic-settings-fields select { font-size: 16px; }
   .panel-heading-right { gap: 10px; }
 }
 @media (max-width: 360px) {
