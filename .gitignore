@@ -1,0 +1,8 @@
+# Draft analysis documents
+/analysis/**/*.md
+/research-local-models-voice-router.md
+
+# Local copies of the case materials
+/case_2/
+/__MACOSX/
+/Копия HackAlem AI_ Voice Router*.pdf
