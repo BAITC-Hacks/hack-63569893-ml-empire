@@ -4,11 +4,11 @@
 
 **Goal:** Запустить FastAPI-бэкенд голосового симулятора, который через LangGraph и LLM выбирает сценарии, безопасно исполняет мок-действия и отдаёт фронтенду текст, аудио и трассировку.
 
-**Architecture:** Один FastAPI-процесс держит сессии и checkpointer LangGraph в памяти для хакатонного демо. `ChatOpenAI` через Responses API выдаёт структурированное решение, а граф применяет правила сценариев, управляет слотами и подтверждением; отдельные адаптеры обслуживают STT/TTS. HTTP создаёт и восстанавливает сессию, WebSocket переносит реплики и аудио по контракту [frontend.md](../../../frontend.md).
+**Architecture:** Один FastAPI-процесс держит сессии и checkpointer LangGraph в памяти для хакатонного демо. `ChatOpenAI` через Responses API выдаёт структурированное решение, а граф применяет правила сценариев, управляет слотами и подтверждением; отдельные адаптеры обслуживают STT/TTS. HTTP создаёт и восстанавливает сессию, WebSocket переносит реплики и аудио по контракту [frontend.md](../../../frontend/frontend.md).
 
 **Tech Stack:** Python 3.11+, FastAPI, Pydantic 2, LangGraph, `langchain-openai`, OpenAI Python SDK, `uv`, pytest, httpx, websockets.
 
-**Spec:** [Voice Router architecture](../../voice-router-architecture.md); интерфейс для браузера — [frontend.md](../../../frontend.md).
+**Spec:** [Voice Router architecture](../../voice-router-architecture.md); интерфейс для браузера — [frontend.md](../../../frontend/frontend.md).
 
 ## Global Constraints
 
@@ -217,7 +217,7 @@ def execute_confirmed_node(state: CallState) -> dict:
 
 **Files:** Create `backend/app/sessions.py`, `backend/app/api/__init__.py`, `backend/app/api/contracts.py`, `backend/app/api/http.py`, `backend/app/api/ws.py`, `backend/app/main.py`, `backend/tests/test_api.py`.
 
-**Interfaces:** HTTP и события WS в точности соответствуют [frontend.md](../../../frontend.md). `SessionManager.create() -> Session`, `get(session_id) -> Session | None`, `process_text(session_id, turn_id, text) -> TurnResult`; session хранит `last_seq`, обработанные `turn_id` и локальную копию мок-бэкенда.
+**Interfaces:** HTTP и события WS в точности соответствуют [frontend.md](../../../frontend/frontend.md). `SessionManager.create() -> Session`, `get(session_id) -> Session | None`, `process_text(session_id, turn_id, text) -> TurnResult`; session хранит `last_seq`, обработанные `turn_id` и локальную копию мок-бэкенда.
 
 - [ ] **Step 1: Написать контрактные тесты FastAPI.** Проверить `/health`, создание/чтение сессии, каталог, `session.ready`, `turn.text` → `transcript.final`/`route.decision`/`agent.text`/`trace.updated`/`turn.complete`, а также неизвестную сессию и повтор `turn_id`.
 
@@ -294,7 +294,7 @@ def test_confirmation_flow_uses_mock_backend(dialog_runner):
 ```
 
 - [ ] **Step 2: Убедиться, что тесты сначала выявляют недостающие переходы.** `uv run --project backend pytest backend/tests/test_dialogs.py -q`.
-- [ ] **Step 3: Исправить обнаруженные переходы, документировать запуск и контракт.** README показывает установку через `uv sync --project backend`, команду запуска, ссылку на `frontend.md`, ограничения памяти и дату среза; конфигурация не пишет в `datas/`.
+- [ ] **Step 3: Исправить обнаруженные переходы, документировать запуск и контракт.** README показывает установку через `uv sync --project backend`, команду запуска, ссылку на `frontend/frontend.md`, ограничения памяти и дату среза; конфигурация не пишет в `datas/`.
 
 ```bash
 uv sync --project backend
