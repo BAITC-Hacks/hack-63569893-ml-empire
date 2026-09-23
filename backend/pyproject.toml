@@ -1,0 +1,23 @@
+[project]
+name = "voice-router-backend"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2",
+    "langgraph",
+    "langchain-openai",
+    "openai",
+    "websockets",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "httpx"]
