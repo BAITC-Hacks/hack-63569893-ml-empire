@@ -10,6 +10,34 @@ uv run --project backend pytest backend/tests -q
 
 The API and browser event shapes are documented in the [frontend contract](../frontend/docs/frontend.md). `GET /api/v1/health` checks the process. `POST /api/v1/sessions` with `{}` creates a session and returns its `session_id` and `ws_path`; connect to that path to exchange text or PCM16 mono 24 kHz audio. The API documentation is at `/docs`.
 
+## Docker
+
+From the repository root:
+
+```bash
+docker compose up --build -d
+docker compose ps
+curl --fail http://localhost:8000/api/v1/health
+docker compose logs --tail=100 backend
+docker compose down
+```
+
+No host Python or uv is needed for Docker startup. The image uses Python 3.13, installs locked production dependencies, and runs one Uvicorn worker as a non-root user. Compose makes the filesystem read-only except `/tmp`. The five required catalog JSON files are bundled in `/app/datas`; calls change only an in-memory copy. There is no database, persistent volume, or frontend container. Do not add workers or replicas: sessions and LangGraph checkpoints are local to one process and are lost on restart.
+
+Compose automatically reads the root `.env` for interpolation, with exported shell variables taking precedence. It passes only `OPENAI_API_KEY`, `ROUTER_MODEL`, and `FRONTEND_ORIGIN` into the container, plus the fixed `DATA_DIR=/app/datas`. All `.env` variants are excluded from the build context. Do not put keys into Docker build arguments, commit them, or share expanded `docker compose config` output. Runtime environment variables are still readable by administrators with access to the Docker daemon.
+
+The default published address is `127.0.0.1:8000`, for local use only. Set `BACKEND_PORT=8001` in `.env` or the shell to change the host port. Set `FRONTEND_ORIGIN` to the exact frontend origin if it differs from `http://localhost:5173`; the browser connects directly to the published HTTP/WS port. Apply changed environment values with `docker compose up -d` (a simple restart does not reload them). External deployment additionally needs an explicit network exposure policy, HTTPS/WSS, and authentication; this Compose file is a local demo setup.
+
+Health and catalog access do not need a provider key. The container healthcheck verifies the local HTTP process, not OpenAI availability. Live routing and audio require credentials. To check packaging without credentials or paid provider requests, run an isolated temporary instance:
+
+```bash
+OPENAI_API_KEY= BACKEND_PORT=18080 docker compose --env-file /dev/null -p voice-router-smoke up --build -d --wait --wait-timeout 60
+uv run --project backend python backend/scripts/smoke_container.py --base-url http://127.0.0.1:18080
+OPENAI_API_KEY= BACKEND_PORT=18080 docker compose --env-file /dev/null -p voice-router-smoke down
+```
+
+The smoke helper needs host uv/Python (unlike normal container startup). It checks HTTP and a deterministic WebSocket identity turn; missing-key speech output is allowed, but protocol or request failures exit nonzero. This verifies packaging, not live LLM/STT/TTS quality. The temporary project does not affect the normal Compose instance.
+
 ## Configuration
 
 | Environment variable | Purpose | Default |
@@ -21,7 +49,7 @@ The API and browser event shapes are documented in the [frontend contract](../fr
 
 The audio adapters default to `gpt-live-transcribe` for speech recognition and `gpt-4o-mini-tts` with the `coral` voice for speech output. Provider credentials stay on the server. The test suite replaces providers with fakes and does not require an API key.
 
-The root `.env` file is loaded explicitly by `--env-file .env`. When using only exported environment variables, omit that flag. Neither the application nor the evaluation script loads `.env` automatically.
+For the non-Docker commands, the root `.env` file is loaded explicitly by `--env-file .env`. When using only exported environment variables, omit that flag. Neither the application nor the evaluation script loads `.env` automatically; Docker Compose handles its own `.env` interpolation as described above.
 
 ## Text WebSocket cycle
 
