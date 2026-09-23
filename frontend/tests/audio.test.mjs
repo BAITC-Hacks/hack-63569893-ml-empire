@@ -587,3 +587,95 @@ test('unmute starts new-generation chunks without waiting on an obsolete resume 
   assert.equal(player.isPlaying(), false, 'obsolete completion cannot corrupt current pending counts');
   await player.dispose();
 });
+
+test('manual stop during a permission prompt releases a late granted microphone without starting capture', async (t) => {
+  const permission = deferred();
+  const browser = browserAudio(t, { permission });
+  const recorder = new PcmRecorder();
+  const errors = [];
+  const pending = recorder.start(() => assert.fail('cancelled permission prompt produced PCM'), { onUnexpectedEnd: error => errors.push(error) });
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  await recorder.stop();
+  permission.resolve(browser.stream);
+  await rejected;
+  assert.equal(browser.stream.tracks[0].stopped, true);
+  assert.equal(browser.contexts.length, 0);
+  assert.deepEqual(errors, [], 'intentional cancellation must not appear as a device failure');
+});
+
+test('permission denial reports an actionable message and the recorder can retry after permission changes', async (t) => {
+  const permission = deferred();
+  const browser = browserAudio(t, { permission });
+  const recorder = new PcmRecorder();
+  const rejected = assert.rejects(recorder.start(() => {}), /Разрешите доступ к микрофону/);
+  permission.reject(new DOMException('User denied permission', 'NotAllowedError'));
+  await rejected;
+  assert.equal(browser.contexts.length, 0);
+  navigator.mediaDevices.getUserMedia = async () => browser.stream;
+  await recorder.start(() => {});
+  assert.equal(browser.nodes.length, 1);
+  await recorder.stop();
+  assert.equal(browser.stream.tracks[0].stopped, true);
+});
+
+test('manual stop during a suspended recorder resume cannot resurrect capture', async (t) => {
+  const resume = deferred();
+  const browser = browserAudio(t, { resumes: [resume] });
+  const recorder = new PcmRecorder();
+  const pending = recorder.start(() => assert.fail('late resumed recorder produced PCM'));
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  await settle();
+  await recorder.stop();
+  assert.equal(browser.stream.tracks[0].stopped, true);
+  assert.equal(browser.contexts[0].state, 'closed');
+  resume.resolve();
+  await rejected;
+  assert.equal(browser.nodes[0].port.onmessage, null);
+});
+
+test('autoplay rejection leaves no first-sound metric and cached PCM can replay after a user gesture', async (t) => {
+  const resume = deferred();
+  const browser = browserAudio(t, { resumes: [resume] });
+  const player = new PcmPlayer();
+  const metrics = [];
+  const ended = [];
+  player.onFirstAudio = id => metrics.push(id);
+  player.onEnded = id => ended.push(id);
+  player.startStream('autoplay-blocked');
+  const rejected = assert.rejects(player.append(pcm(100, 200)), { name: 'NotAllowedError' });
+  await settle();
+  resume.reject(new DOMException('User activation required', 'NotAllowedError'));
+  await rejected;
+  player.endStream();
+  browser.elapse(100);
+  assert.deepEqual(metrics, []);
+  assert.deepEqual(ended, ['autoplay-blocked']);
+  assert.equal(player.isPlaying(), false);
+  assert.equal(player.hasAudio('autoplay-blocked'), true);
+  await player.replay('autoplay-blocked');
+  assert.equal(browser.contexts[0].sources.length, 1);
+  assert.deepEqual(browser.contexts[0].sources[0].buffer.samples, [100 / 32768, 200 / 32768]);
+  browser.elapse(100);
+  assert.deepEqual(metrics, [], 'replay must not retroactively invent first-sound latency');
+  await player.dispose();
+});
+
+test('disposing a player while resume is pending cannot allocate or play after unmount', async (t) => {
+  const resume = deferred();
+  const browser = browserAudio(t, { resumes: [resume] });
+  const player = new PcmPlayer();
+  const metrics = [];
+  player.onFirstAudio = id => metrics.push(id);
+  player.startStream('unmount');
+  const pending = player.append(pcm(800));
+  await settle();
+  await player.dispose();
+  resume.resolve();
+  await pending;
+  browser.elapse(100);
+  assert.equal(browser.contexts.length, 1);
+  assert.equal(browser.contexts[0].state, 'closed');
+  assert.equal(browser.contexts[0].sources.length, 0);
+  assert.equal(player.hasAudio('unmount'), false);
+  assert.deepEqual(metrics, []);
+});
