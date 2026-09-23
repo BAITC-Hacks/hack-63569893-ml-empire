@@ -104,6 +104,8 @@ async def stream(websocket: WebSocket, session_id: str):
                             "server_first_audio": (sent_at - start) * 1000,
                         })
                         first = False
+            if not began:
+                error(turn_id, "tts_unavailable")
         except Exception:
             error(turn_id, "tts_unavailable")
         finally:
@@ -112,6 +114,10 @@ async def stream(websocket: WebSocket, session_id: str):
 
     async def process(turn_id, text=None, transcriber=None):
         start = perf_counter()
+        final_sent = False
+        route_sent = False
+        agent_sent = False
+        trace_sent = False
         logger.info("turn started turn_id=%s session_id=%s", turn_id, session_id)
         try:
             stt_ms = 0.0
@@ -127,11 +133,13 @@ async def stream(websocket: WebSocket, session_id: str):
                     emit("turn.complete", turn_id, {"status": "error"})
                     return
             emit("transcript.final", turn_id, {"text": text, "language": None})
+            final_sent = True
             async with asyncio.timeout(60):
                 result = await manager.process_claimed(session, turn_id, text)
             route = dict(result["route"])
             route.setdefault("reason", "; ".join(row["reason"] for row in route["scenarios"]))
             emit("route.decision", turn_id, route)
+            route_sent = True
             if route.get("routing_error") or any(step.get("routing_error") for step in result["trace"]):
                 error(turn_id, "router_unavailable")
             for action in result["actions"]:
@@ -142,6 +150,7 @@ async def stream(websocket: WebSocket, session_id: str):
                 elif action["status"] == "error":
                     error(turn_id, "action_failed")
             emit("agent.text", turn_id, {"text": result["text"], "language": result["language"]})
+            agent_sent = True
             timings = {key.removesuffix("_ms"): value for key, value in result["timings"].items()}
             if "route" in timings:
                 timings["router"] = timings.pop("route")
@@ -151,8 +160,24 @@ async def stream(websocket: WebSocket, session_id: str):
             await audio_reply(turn_id, result, start)
             traces[turn_id]["latency_ms"]["total"] = (perf_counter() - start) * 1000
             update_trace(turn_id)
+            trace_sent = True
             emit("turn.complete", turn_id, {"status": frontend_status(result["status"])})
         except Exception:
+            if final_sent:
+                if not route_sent:
+                    emit("route.decision", turn_id, {"scenarios": [{"scenario_id": "SYS_UNCLEAR",
+                         "reason": "Маршрутизация временно недоступна", "confidence_estimate": None}],
+                         "alternatives": [], "slots": {}, "language": "ru", "source": "llm",
+                         "reason": "Маршрутизация временно недоступна",
+                         "is_continuation": False, "needs_clarification": True})
+                if not agent_sent:
+                    emit("agent.text", turn_id, {"text": "Не удалось обработать запрос. Попробуйте ещё раз.",
+                                                  "language": "ru"})
+                if not trace_sent:
+                    traces[turn_id] = {"actions": [], "steps": [],
+                        "latency_ms": {"stt": stt_ms, "total": (perf_counter() - start) * 1000},
+                        "handoff": None}
+                    update_trace(turn_id)
             error(turn_id, "router_unavailable")
             emit("turn.complete", turn_id, {"status": "error"})
         finally:

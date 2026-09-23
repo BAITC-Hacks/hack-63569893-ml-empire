@@ -182,6 +182,13 @@ def test_router_failure_is_recoverable_without_reexecuting_failed_turn():
             ws.receive_json()
             send_text(ws, "broken")
             events = read_turn(ws)
+            assert [e["type"] for e in events] == ["transcript.final", "route.decision",
+                "agent.text", "trace.updated", "error", "turn.complete"]
+            route = events[1]["payload"]
+            assert route["scenarios"][0]["scenario_id"] == "SYS_UNCLEAR"
+            assert route["source"] == "llm"
+            assert events[2]["payload"]["text"]
+            assert events[3]["payload"]["actions"] == []
             assert events[-2]["payload"]["code"] == "router_unavailable"
             assert events[-1]["payload"]["status"] == "error"
             assert "test@example.com" not in json.dumps(events)

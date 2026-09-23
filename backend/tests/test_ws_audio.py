@@ -107,6 +107,24 @@ def test_tts_failure_preserves_answer_and_duplicate_never_reroutes():
             assert len(processor.calls) == 1
 
 
+def test_empty_tts_stream_reports_unavailable_and_keeps_text():
+    class EmptySynthesizer:
+        async def stream(self, text, language):
+            if False:
+                yield b""
+
+    with TestClient(create_app(processor=Processor(), synthesizer=EmptySynthesizer())) as client:
+        with client.websocket_connect(create_session(client)["ws_path"]) as ws:
+            ws.receive_json()
+            send_text(ws)
+            events = read_turn(ws)
+            assert "agent.text" in [event["type"] for event in events]
+            assert any(event["type"] == "error" and event["payload"]["code"] == "tts_unavailable"
+                       for event in events)
+            assert "audio.start" not in [event["type"] for event in events]
+            assert events[-1]["payload"]["status"] == "answered"
+
+
 def test_playback_ack_is_read_while_tts_waits_and_updates_client_metric():
     synth = Synthesizer(gated=True)
     with TestClient(create_app(processor=Processor(), synthesizer=synth)) as client:
