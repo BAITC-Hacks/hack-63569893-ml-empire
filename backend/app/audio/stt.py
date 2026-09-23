@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import json
 import os
 from collections.abc import AsyncIterator, Callable
@@ -36,6 +37,7 @@ class Transcriber:
         self._reader_task: asyncio.Task[None] | None = None
         self._callback_task: asyncio.Task[None] | None = None
         self._callback_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._callback_stop = False
         self._final: asyncio.Future[str] | None = None
         self._committed_id: str | None = None
         self._completed: dict[str, str] = {}
@@ -65,6 +67,7 @@ class Transcriber:
         self._final = asyncio.get_running_loop().create_future()
         self._reader_task = asyncio.create_task(self._read_events())
         if self._on_partial is not None:
+            self._callback_stop = False
             self._callback_task = asyncio.create_task(self._run_callbacks())
         try:
             await self._send(
@@ -131,13 +134,6 @@ class Transcriber:
 
     async def aclose(self) -> None:
         """Release the upstream connection, including after cancellation."""
-        callback, self._callback_task = self._callback_task, None
-        if callback is not None:
-            callback.cancel()
-            try:
-                await callback
-            except asyncio.CancelledError:
-                pass
         reader, self._reader_task = self._reader_task, None
         if reader is not None:
             reader.cancel()
@@ -145,22 +141,35 @@ class Transcriber:
                 await reader
             except asyncio.CancelledError:
                 pass
+        callback, self._callback_task = self._callback_task, None
+        if callback is not None:
+            try:
+                await asyncio.wait_for(self._callback_queue.join(), timeout=min(self._timeout, 0.1))
+            except TimeoutError:
+                pass
+            self._callback_stop = True
+            callback.cancel()
+            await asyncio.wait({callback}, timeout=min(self._timeout, 0.02))
         socket, self._socket = self._socket, None
         if socket is not None:
             await asyncio.wait_for(socket.close(), timeout=self._timeout)
         self._partial_queue.put_nowait(_END)
 
     async def _run_callbacks(self) -> None:
-        while True:
+        while not self._callback_stop:
             text = await self._callback_queue.get()
             try:
                 if asyncio.iscoroutinefunction(self._on_partial):
-                    await self._on_partial(text)
+                    result = self._on_partial(text)
                 else:
-                    await asyncio.to_thread(self._on_partial, text)
+                    result = await asyncio.to_thread(self._on_partial, text)
+                if inspect.isawaitable(result):
+                    await result
             except Exception:
                 # Progress display is optional; it must not affect the final result.
                 pass
+            finally:
+                self._callback_queue.task_done()
 
     async def _read_events(self) -> None:
         try:
