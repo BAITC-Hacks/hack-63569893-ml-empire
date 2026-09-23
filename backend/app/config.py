@@ -1,6 +1,7 @@
 """Application startup settings."""
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
 
@@ -16,9 +17,10 @@ REQUIRED_DATA_FILES = (
 
 @dataclass(frozen=True)
 class Settings:
-    data_dir: Path = field(default_factory=lambda: DEFAULT_DATA_DIR)
-    router_model: str = "gpt-6-sol"
+    data_dir: Path = field(default_factory=lambda: Path(os.getenv("DATA_DIR", DEFAULT_DATA_DIR)))
+    router_model: str = field(default_factory=lambda: os.getenv("ROUTER_MODEL", "gpt-6-sol"))
     router_timeout_seconds: float = 15.0
+    frontend_origin: str = field(default_factory=lambda: os.getenv("FRONTEND_ORIGIN", "http://localhost:5173"))
 
     def __post_init__(self) -> None:
         data_dir = Path(self.data_dir)
@@ -31,4 +33,6 @@ class Settings:
             raise ValueError("router_model must not be blank")
         if self.router_timeout_seconds <= 0:
             raise ValueError("router_timeout_seconds must be positive")
+        if self.frontend_origin == "*" or not self.frontend_origin.startswith(("http://", "https://")):
+            raise ValueError("frontend_origin must be one explicit HTTP(S) origin")
         object.__setattr__(self, "data_dir", data_dir)
