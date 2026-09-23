@@ -60,18 +60,25 @@ async def test_transcriber_emits_cumulative_partials_without_completing_turn():
     """Deltas are progress only; finish awaits the committed item's final text."""
     socket = FakeSocket()
     partials = []
+    partials_seen = asyncio.Event()
+    loop = asyncio.get_running_loop()
 
     async def connect(*args, **kwargs):
         return socket
 
-    transcriber = Transcriber(connector=connect, api_key="test-key", on_partial=partials.append)
+    def on_partial(text):
+        partials.append(text)
+        if len(partials) == 2:
+            loop.call_soon_threadsafe(partials_seen.set)
+
+    transcriber = Transcriber(connector=connect, api_key="test-key", on_partial=on_partial)
     await transcriber.feed(b"\x00\x00")
     socket.emit({"type": "conversation.item.input_audio_transcription.delta", "item_id": "ours", "delta": "Сә"})
     socket.emit({"type": "conversation.item.input_audio_transcription.delta", "item_id": "ours", "delta": "лем"})
     task = asyncio.create_task(transcriber.finish())
     await asyncio.sleep(0)
     socket.emit({"type": "input_audio_buffer.committed", "item_id": "ours"})
-    await asyncio.sleep(0)
+    await asyncio.wait_for(partials_seen.wait(), timeout=0.2)
     assert partials == ["Сә", "Сәлем"]
     assert not task.done()
     socket.emit({"type": "conversation.item.input_audio_transcription.completed", "item_id": "ours", "transcript": "Сәлем!"})
@@ -153,3 +160,102 @@ async def test_transcriber_surfaces_provider_error_and_closes_connection():
     with pytest.raises(RuntimeError, match="unavailable"):
         await task
     assert socket.closed
+
+
+@pytest.mark.asyncio
+async def test_transcriber_closes_failed_setup_and_reconnects_on_next_feed():
+    """A failed session.update cannot leave a half-initialized socket reusable."""
+    class FailingSetupSocket(FakeSocket):
+        async def send(self, message):
+            raise OSError("setup failed")
+
+    first, second = FailingSetupSocket(), FakeSocket()
+    sockets = iter((first, second))
+
+    async def connect(*args, **kwargs):
+        return next(sockets)
+
+    transcriber = Transcriber(connector=connect, api_key="test-key")
+    with pytest.raises(OSError, match="setup failed"):
+        await transcriber.feed(b"\x00\x00")
+    assert first.closed
+    await transcriber.feed(b"\x01\x00")
+    assert second.sent[0]["type"] == "session.update"
+    assert second.sent[1]["type"] == "input_audio_buffer.append"
+    await transcriber.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_event", ["session.update", "input_audio_buffer.append", "input_audio_buffer.commit"])
+async def test_transcriber_bounds_each_upstream_send(blocked_event):
+    """A stalled WebSocket send must time out before the caller's guard."""
+    class BlockingSocket(FakeSocket):
+        async def send(self, message):
+            event = json.loads(message)
+            if event["type"] == blocked_event:
+                await asyncio.Event().wait()
+            await super().send(message)
+
+    socket = BlockingSocket()
+
+    async def connect(*args, **kwargs):
+        return socket
+
+    transcriber = Transcriber(connector=connect, api_key="test-key", timeout=0.01)
+    start = asyncio.get_running_loop().time()
+    if blocked_event == "input_audio_buffer.commit":
+        await transcriber.feed(b"\x00\x00")
+        operation = transcriber.finish()
+    else:
+        operation = transcriber.feed(b"\x00\x00")
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(operation, timeout=0.2)
+    assert asyncio.get_running_loop().time() - start < 0.15
+    assert socket.closed
+
+
+@pytest.mark.asyncio
+async def test_transcriber_final_survives_raising_partial_callback():
+    """UI progress callback errors cannot replace a valid final transcript."""
+    socket = FakeSocket()
+
+    async def connect(*args, **kwargs):
+        return socket
+
+    def on_partial(_text):
+        raise RuntimeError("UI unavailable")
+
+    transcriber = Transcriber(connector=connect, api_key="test-key", on_partial=on_partial)
+    await transcriber.feed(b"\x00\x00")
+    task = asyncio.create_task(transcriber.finish())
+    socket.emit({"type": "input_audio_buffer.committed", "item_id": "ours"})
+    socket.emit({"type": "conversation.item.input_audio_transcription.delta", "item_id": "ours", "delta": "Прив"})
+    socket.emit({"type": "conversation.item.input_audio_transcription.completed", "item_id": "ours", "transcript": "Привет"})
+    assert await asyncio.wait_for(task, timeout=0.2) == "Привет"
+
+
+@pytest.mark.asyncio
+async def test_transcriber_final_survives_slow_partial_callback():
+    """A waiting async UI callback cannot delay the final transcript."""
+    socket = FakeSocket()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def connect(*args, **kwargs):
+        return socket
+
+    async def on_partial(_text):
+        entered.set()
+        await release.wait()
+
+    transcriber = Transcriber(connector=connect, api_key="test-key", on_partial=on_partial)
+    await transcriber.feed(b"\x00\x00")
+    task = asyncio.create_task(transcriber.finish())
+    socket.emit({"type": "input_audio_buffer.committed", "item_id": "ours"})
+    socket.emit({"type": "conversation.item.input_audio_transcription.delta", "item_id": "ours", "delta": "Прив"})
+    await asyncio.wait_for(entered.wait(), timeout=0.2)
+    socket.emit({"type": "conversation.item.input_audio_transcription.completed", "item_id": "ours", "transcript": "Привет"})
+    try:
+        assert await asyncio.wait_for(task, timeout=0.2) == "Привет"
+    finally:
+        release.set()

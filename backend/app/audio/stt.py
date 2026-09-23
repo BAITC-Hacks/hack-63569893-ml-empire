@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import inspect
 import json
 import os
 from collections.abc import AsyncIterator, Callable
@@ -35,6 +34,8 @@ class Transcriber:
         self._on_partial = on_partial
         self._socket: Any = None
         self._reader_task: asyncio.Task[None] | None = None
+        self._callback_task: asyncio.Task[None] | None = None
+        self._callback_queue: asyncio.Queue[str] = asyncio.Queue()
         self._final: asyncio.Future[str] | None = None
         self._committed_id: str | None = None
         self._completed: dict[str, str] = {}
@@ -63,24 +64,33 @@ class Transcriber:
         )
         self._final = asyncio.get_running_loop().create_future()
         self._reader_task = asyncio.create_task(self._read_events())
-        await self._send(
-            {
-                "type": "session.update",
-                "session": {
-                    "type": "transcription",
-                    "audio": {
-                        "input": {
-                            "format": {"type": "audio/pcm", "rate": 24000},
-                            "transcription": {"model": self._model},
-                            "turn_detection": None,
-                        }
+        if self._on_partial is not None:
+            self._callback_task = asyncio.create_task(self._run_callbacks())
+        try:
+            await self._send(
+                {
+                    "type": "session.update",
+                    "session": {
+                        "type": "transcription",
+                        "audio": {
+                            "input": {
+                                "format": {"type": "audio/pcm", "rate": 24000},
+                                "transcription": {"model": self._model},
+                                "turn_detection": None,
+                            }
+                        },
                     },
-                },
-            }
-        )
+                }
+            )
+        except BaseException:
+            await self.aclose()
+            self._final = None
+            self._partial_queue = asyncio.Queue()
+            self._callback_queue = asyncio.Queue()
+            raise
 
     async def _send(self, event: dict[str, Any]) -> None:
-        await self._socket.send(json.dumps(event))
+        await asyncio.wait_for(self._socket.send(json.dumps(event)), timeout=self._timeout)
 
     async def feed(self, pcm: bytes) -> None:
         """Append complete little-endian PCM16 samples to this turn."""
@@ -91,7 +101,11 @@ class Transcriber:
         if not pcm:
             return
         await self._connect()
-        await self._send({"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode("ascii")})
+        try:
+            await self._send({"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode("ascii")})
+        except BaseException:
+            await self.aclose()
+            raise
 
     async def finish(self) -> str:
         """Commit this turn and wait for its matching final transcript."""
@@ -117,6 +131,13 @@ class Transcriber:
 
     async def aclose(self) -> None:
         """Release the upstream connection, including after cancellation."""
+        callback, self._callback_task = self._callback_task, None
+        if callback is not None:
+            callback.cancel()
+            try:
+                await callback
+            except asyncio.CancelledError:
+                pass
         reader, self._reader_task = self._reader_task, None
         if reader is not None:
             reader.cancel()
@@ -126,8 +147,20 @@ class Transcriber:
                 pass
         socket, self._socket = self._socket, None
         if socket is not None:
-            await socket.close()
+            await asyncio.wait_for(socket.close(), timeout=self._timeout)
         self._partial_queue.put_nowait(_END)
+
+    async def _run_callbacks(self) -> None:
+        while True:
+            text = await self._callback_queue.get()
+            try:
+                if asyncio.iscoroutinefunction(self._on_partial):
+                    await self._on_partial(text)
+                else:
+                    await asyncio.to_thread(self._on_partial, text)
+            except Exception:
+                # Progress display is optional; it must not affect the final result.
+                pass
 
     async def _read_events(self) -> None:
         try:
@@ -145,9 +178,7 @@ class Transcriber:
                     if self._committed_id in (None, item_id):
                         self._partial_queue.put_nowait(text)
                         if self._on_partial is not None:
-                            result = self._on_partial(text)
-                            if inspect.isawaitable(result):
-                                await result
+                            self._callback_queue.put_nowait(text)
                 elif kind == "conversation.item.input_audio_transcription.completed" and item_id:
                     transcript = event.get("transcript", "")
                     self._completed[item_id] = transcript
