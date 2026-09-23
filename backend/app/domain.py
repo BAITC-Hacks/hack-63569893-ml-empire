@@ -1,6 +1,7 @@
 """Typed records from the startup catalog."""
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Literal, TypedDict
 
 
 class ScenarioSlots(BaseModel):
@@ -60,3 +61,60 @@ class SystemIntentSpec(BaseModel):
     description: str
     behavior: str
     response: dict[str, str]
+
+
+class RouteScenario(BaseModel):
+    scenario_id: str
+    reason: str
+    confidence_estimate: float | None = None
+
+
+class TurnRoute(BaseModel):
+    language: Literal["ru", "kk"]
+    scenarios: list[RouteScenario]
+    alternatives: list[str] = Field(default_factory=list)
+    slots: dict[str, str | None] = Field(default_factory=dict)
+    is_continuation: bool = False
+    needs_clarification: bool = False
+    source: Literal["llm", "continuation", "confirmation"]
+
+
+class TurnResult(BaseModel):
+    session_id: str
+    turn_id: str
+    text: str
+    language: Literal["ru", "kk"]
+    route: TurnRoute
+    actions: list[dict] = Field(default_factory=list)
+    trace: list[dict] = Field(default_factory=list)
+    pending_scenarios: list[str] = Field(default_factory=list)
+    pending_confirmation: dict | None = None
+    status: Literal["completed", "collecting_slots", "awaiting_confirmation", "clarifying", "handoff"]
+    timings: dict[str, float] = Field(default_factory=dict)
+
+
+class CallState(TypedDict, total=False):
+    session_id: str
+    turn_id: str
+    transcript: str
+    language: str
+    client_id: str | None
+    active_scenario: str | None
+    pending_scenarios: list[str]
+    suspended_scenarios: list[dict]
+    slots: dict[str, dict[str, Any]]
+    pending_confirmation: dict | None
+    clarification_count: int
+    trace: list[dict]
+    timings: dict[str, float]
+    route: dict
+    actions: list[dict]
+    text: str
+    status: str
+    next_node: str
+    expected_slot: str | None
+    confirmation_answer: str
+    action_index: int
+    facts: dict
+    recent_turns: list[str]
+    offer_resume: bool
