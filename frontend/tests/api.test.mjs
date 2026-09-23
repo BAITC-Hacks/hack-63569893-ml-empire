@@ -38,6 +38,28 @@ test('validates every documented server event without dropping optional metadata
   for (const fixture of fixtures) assert.deepEqual(parse(fixture), fixture, fixture.type);
 });
 
+test('accepts backend routes with an explicitly unknown confidence estimate', () => {
+  for (const source of ['llm', 'continuation', 'confirmation']) {
+    const fixture = event('route.decision', {
+      scenarios: [{ scenario_id: 'SC13', reason: 'Ответ в текущем диалоге', confidence_estimate: null }],
+      alternatives: [], language: 'ru', slots: {}, source,
+    });
+    assert.deepEqual(parse(fixture), fixture, source);
+  }
+});
+
+test('confidence permits absent, null or bounded numbers without accepting malformed estimates', () => {
+  const route = (confidence_estimate) => ({
+    scenarios: [{ scenario_id: 'SC13', confidence_estimate }], alternatives: [], language: 'ru',
+  });
+  for (const value of [undefined, null, 0, 0.83, 1]) {
+    assert.equal(api.isRouteDecision(route(value)), true, `valid confidence: ${value}`);
+  }
+  for (const value of [-0.01, 1.01, NaN, Infinity, -Infinity, '0.83', false, {}, []]) {
+    assert.equal(api.isRouteDecision(route(value)), false, `invalid confidence: ${value}`);
+  }
+});
+
 test('rejects invalid envelopes, unsupported events, and missing turn ids', () => {
   const valid = event('transcript.partial', { text: 'Здравствуйте' });
   const invalid = [null, [], {}, { ...valid, seq: -1 }, { ...valid, seq: 1.1 },

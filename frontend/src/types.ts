@@ -38,7 +38,7 @@ export interface Scenario {
   name?: string;
   priority?: 'normal' | 'high' | 'urgent';
   reason?: string;
-  confidence_estimate?: number;
+  confidence_estimate?: number | null;
 }
 
 export interface RouteDecision {
