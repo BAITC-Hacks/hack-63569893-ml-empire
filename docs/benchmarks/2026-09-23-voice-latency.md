@@ -46,14 +46,25 @@ Before deployment, three real-provider text turns through the original backend m
 | Office KK | 3089 ms | 721 ms | 3827 ms |
 | Claim status RU | 4260 ms | 601 ms | 4876 ms |
 
-These small sequential samples are smoke tests, not a p95 benchmark. Post-deployment measurements are recorded below after restarting the application.
+These small sequential samples are smoke tests, not a p95 benchmark. After deployment, three representative text turns went through the frontend's actual Vite HTTP/WebSocket proxy, the graph and real TTS without errors:
+
+| Request | Router | First TTS PCM | Text to first PCM (server) |
+| --- | ---: | ---: | ---: |
+| Office RU, first application turn | 3406 ms | 760 ms | 5471 ms |
+| Office KK, warm application | 2791 ms | 528 ms | 3344 ms |
+| Claim status RU, warm application | 2172 ms | 651 ms | 2844 ms |
+
+The first application turn exposed about 1305 ms outside routing/TTS from lazy runtime loading. A follow-up change moves default graph assembly into application startup without making provider requests. The two sets above are representative smoke requests, not an identical paired workload; only the 104-case router comparison used exactly the same labeled inputs. TTS startup is network-dependent and is not uniformly faster in these few observations.
+
+A full synthetic voice turn (generated office question, 156000 PCM bytes, no saved audio) also passed through frontend proxy → real STT → graph → real TTS, producing SC33 without errors. Final-STT-to-first-PCM was **3131 ms**: router 2059 ms and TTS startup 1040 ms. STT finalization itself took 3957 ms. The client observed 8303 ms from `turn.commit` to the first returned PCM, including queued transport/input processing; this is not an end-of-human-speech measurement. No real microphone recording was made.
 
 ## Verification
 
-- Backend: 279 tests passed.
+- Backend: 281 tests passed, including keyless startup prewarm and injected-processor isolation.
 - Frontend: 165 tests passed; production build passed.
 - Independent review: no blocking findings; public-schema compatibility, catalog preservation, TTS client ownership and failure accounting checked.
 - TTS gated-stream regression test verifies first PCM is forwarded before upstream EOF without waiting for a 4096-byte application buffer.
+- Default graph assembly now runs during application startup; no provider clients or model requests, session creation or speculative actions are performed by this prewarm.
 
 ## Remaining target gap
 

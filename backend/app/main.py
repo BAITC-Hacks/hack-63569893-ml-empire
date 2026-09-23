@@ -21,26 +21,29 @@ def create_app(*, settings=None, catalog=None, processor=None,
                transcriber_factory=Transcriber, synthesizer=_DEFAULT) -> FastAPI:
     settings = settings or Settings()
     catalog = catalog or Catalog.load(settings.data_dir)
-    if processor is None:
-        graph = None
+    owns_processor = processor is None
+    graph = None
+    run_default_turn = None
+    if owns_processor:
 
         async def processor(session_id, turn_id, text):
-            nonlocal graph
-            from langgraph.checkpoint.memory import InMemorySaver
-            from app.actions import ActionEngine
-            from app.graph import build_graph, run_turn
-            from app.router import LLMRouter
-
-            if graph is None:
-                graph = build_graph(catalog, LLMRouter(catalog, settings=settings),
-                                    ActionEngine(catalog), InMemorySaver())
-            return await run_turn(graph, session_id, turn_id, text)
+            return await run_default_turn(graph, session_id, turn_id, text)
 
     owns_synthesizer = synthesizer is _DEFAULT
 
     @asynccontextmanager
     async def lifespan(app):
+        nonlocal graph, run_default_turn
         try:
+            if owns_processor:
+                from langgraph.checkpoint.memory import InMemorySaver
+                from app.actions import ActionEngine
+                from app.graph import build_graph, run_turn
+                from app.router import LLMRouter
+
+                graph = build_graph(catalog, LLMRouter(catalog, settings=settings),
+                                    ActionEngine(catalog), InMemorySaver())
+                run_default_turn = run_turn
             yield
         finally:
             if owns_synthesizer:
