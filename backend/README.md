@@ -50,7 +50,7 @@ The smoke helper needs host uv/Python (unlike normal container startup). It chec
 
 The audio adapters default to `gpt-live-transcribe` for speech recognition and `gpt-4o-mini-tts` with the `coral` voice for speech output. Provider credentials stay on the server. The test suite replaces providers with fakes and does not require an API key.
 
-The router requests a compact structured result from the provider, then expands and validates it before returning the existing `RouterDecision` and `route.decision` fields. It keeps the full catalog descriptions and exclusion rules in the prompt, supports multiple intents, and falls back to clarification on invalid results. Its default effort is `none`; set `ROUTER_REASONING_EFFORT=low` to compare the prior baseline. The route timeout is 15 seconds, with one provider retry and a 768-token output cap. Docker Compose forwards the effort setting from the environment and also defaults it to `none`.
+The router requests a compact structured result from the provider, then expands and validates it before returning the existing `RouterDecision` and `route.decision` fields. It keeps the full catalog descriptions and exclusion rules in the prompt, supports multiple intents, and falls back to clarification on invalid results. Its default effort is `none`; set `ROUTER_REASONING_EFFORT=low` to compare effort settings on the current compact router, not to reproduce the original implementation. The route timeout is 15 seconds, with one provider retry and a 768-token output cap. Docker Compose forwards the effort setting from the environment and also defaults it to `none`.
 
 TTS keeps one lazily created provider client across turns and closes it at application shutdown. It streams PCM bytes as the provider delivers them, including chunks smaller than 4096 bytes, while keeping PCM16 samples whole. Audio is not stored by this adapter.
 
@@ -89,7 +89,7 @@ When a turn sends audio, `trace.updated` includes `latency_ms.post_stt_first_aud
 
 `datas/` is read at startup and is not modified by calls. The mock backend uses `2026-10-01` as its fixed date, independent of the machine clock. Each call has an isolated in-memory copy of mock data and LangGraph checkpoint state. Restarting the process loses sessions and changes; run a single server process for the demo, with no worker replication or persistent storage.
 
-The dialogue tests use annotated turns from `datas/dialogs_sample.json` against the real graph, catalog, and action engine, with a fake router. They are integration checks, not a measured model accuracy score. For a live routing evaluation with a provider key, run the same dev set at the default effort and then compare the `low` baseline:
+The dialogue tests use annotated turns from `datas/dialogs_sample.json` against the real graph, catalog, and action engine, with a fake router. They are integration checks, not a measured model accuracy score. For a live routing evaluation with a provider key, run the same dev set at the default effort and then compare `low` on the current compact implementation:
 
 ```bash
 uv run --project backend --env-file .env python backend/scripts/evaluate_router.py --model gpt-6-sol --effort none --concurrency 1 --output /tmp/router-sol-none.json

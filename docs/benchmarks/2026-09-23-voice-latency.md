@@ -18,6 +18,8 @@ The same 104 bundled synthetic utterances were evaluated against the real provid
 
 Original Sol missed the second intent in U083. Compact Luna missed the second intents in U086 and U090. Compact Sol matched every labeled intent set in this sample; this is not a guarantee on unseen conversations.
 
+A separate, bounded `gpt-4.1-nano` probe with the same catalog/schema and no reasoning parameter took 2988/1284/2322 ms on U065/U066/U090. All three failed the expected routes (the last used a validation-error fallback). It was rejected without a larger evaluation or production configuration change.
+
 The original baseline used `LLMRouter` loaded from commit `d141057`, not the new router with `--effort low`. The original/Luna runs overlapped; compact Sol ran with a different concurrency. Network/provider load and scheduling are not controlled, so the observed difference is not a controlled percentage speedup. “First request” means first application request, not a guarantee of an empty provider prompt cache. Remaining-request p50/p95 values are included in the JSON artifacts.
 
 - `2026-09-23-router-baseline.json`
