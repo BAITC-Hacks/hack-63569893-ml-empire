@@ -8,10 +8,10 @@ From the repository root, with [uv](https://docs.astral.sh/uv/) installed:
 
 ```bash
 uv sync --project backend
-uv run --project backend uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+uv run --project backend --env-file .env uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 ```
 
-Set `OPENAI_API_KEY` in your environment for live routing and audio. The API is at `http://localhost:8000`; see the [backend guide](backend/README.md) for configuration, a text WebSocket example, and tests.
+Set `OPENAI_API_KEY` in the root `.env` file or your environment for live routing and audio. The command above explicitly loads `.env`; it is not loaded automatically. If you only use exported environment variables, omit `--env-file .env`. The API is at `http://localhost:8000`; see the [backend guide](backend/README.md) for configuration, a text WebSocket example, and tests.
 
 ## Project documents
 

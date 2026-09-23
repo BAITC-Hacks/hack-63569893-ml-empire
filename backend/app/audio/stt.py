@@ -59,7 +59,7 @@ class Transcriber:
             connector = self._connector
         self._socket = await asyncio.wait_for(
             connector(
-                f"wss://api.openai.com/v1/realtime?model={self._model}",
+                "wss://api.openai.com/v1/realtime?intent=transcription",
                 additional_headers={"Authorization": f"Bearer {api_key}"},
             ),
             timeout=self._timeout,

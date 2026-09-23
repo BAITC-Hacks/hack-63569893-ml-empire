@@ -49,7 +49,7 @@ class Synthesizer:
                 instructions=instructions,
                 response_format="pcm",
             ) as response:
-                async for chunk in response.aiter_bytes(chunk_size=self._chunk_size):
+                async for chunk in response.iter_bytes(chunk_size=self._chunk_size):
                     samples = trailing_byte + chunk
                     complete_length = len(samples) & ~1
                     if complete_length:

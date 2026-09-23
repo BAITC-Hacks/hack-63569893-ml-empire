@@ -4,7 +4,7 @@ Run commands from the repository root with Python 3.11+ and [uv](https://docs.as
 
 ```bash
 uv sync --project backend
-uv run --project backend uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+uv run --project backend --env-file .env uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 uv run --project backend pytest backend/tests -q
 ```
 
@@ -20,6 +20,8 @@ The API and browser event shapes are documented in the [frontend contract](../fr
 | `DATA_DIR` | Directory containing the startup catalog and mock backend JSON | Repository `datas/` |
 
 The audio adapters default to `gpt-live-transcribe` for speech recognition and `gpt-4o-mini-tts` with the `coral` voice for speech output. Provider credentials stay on the server. The test suite replaces providers with fakes and does not require an API key.
+
+The root `.env` file is loaded explicitly by `--env-file .env`. When using only exported environment variables, omit that flag. Neither the application nor the evaluation script loads `.env` automatically.
 
 ## Text WebSocket cycle
 
@@ -45,7 +47,13 @@ Read `route.decision`, `agent.text`, `trace.updated`, and `turn.complete` events
 The dialogue tests use annotated turns from `datas/dialogs_sample.json` against the real graph, catalog, and action engine, with a fake router. They are integration checks, not a measured model accuracy score. For a live routing evaluation, when a provider key is available, run:
 
 ```bash
-uv run --project backend python backend/scripts/evaluate_router.py --model gpt-6-sol
+uv run --project backend --env-file .env python backend/scripts/evaluate_router.py --model gpt-6-sol
 ```
 
-No live router accuracy or first-audio latency result is claimed here; neither is established by the offline test suite. In a browser, first-audio latency must be measured from end of speech to actual playback start, using `playback.started`.
+## Live smoke verification — 2026-09-23
+
+With credentials loaded from the root `.env`, three Russian, Kazakh, and mixed-language requests selected the expected routes (`SC33`, `SC33`, `SC13`), taking 4957, 3150, and 4529 ms respectively. A live text WebSocket turn completed through the graph and TTS without errors, returning 540,000 PCM bytes.
+
+The final synthetic TTS → STT roundtrip returned the exact phrase `Где ваш офис в Алматы?`: synthesis produced 146,400 PCM bytes (3.05 seconds of audio), with its first chunk after 1.784 seconds and completion after 2.530 seconds. Transcription took 6.173 seconds. These are individual adapter smoke checks, not quality benchmarks or latency guarantees.
+
+Full-dev routing accuracy and browser end-of-speech-to-playback latency remain unmeasured. In a browser, measure actual playback start using `playback.started`; neither synthetic roundtrips nor the offline test suite establish that metric.

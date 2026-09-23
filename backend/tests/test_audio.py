@@ -86,6 +86,27 @@ async def test_transcriber_emits_cumulative_partials_without_completing_turn():
 
 
 @pytest.mark.asyncio
+async def test_transcriber_selects_transcription_session_at_handshake():
+    """A transcription model cannot be used as the Realtime session model."""
+    from urllib.parse import parse_qs, urlparse
+
+    socket = FakeSocket()
+    connections = []
+
+    async def connect(url, **kwargs):
+        connections.append(url)
+        return socket
+
+    transcriber = Transcriber(connector=connect, api_key="offline-test-key")
+    try:
+        await transcriber.feed(b"\x00\x00")
+        assert parse_qs(urlparse(connections[0]).query) == {"intent": ["transcription"]}
+        assert socket.sent[0]["session"]["audio"]["input"]["transcription"]["model"] == "gpt-live-transcribe"
+    finally:
+        await transcriber.aclose()
+
+
+@pytest.mark.asyncio
 async def test_transcriber_rejects_misaligned_pcm():
     """A half sample must not be sent to the provider."""
     transcriber = Transcriber(connector=None, api_key="test-key")
@@ -103,9 +124,25 @@ class FakeSpeechResponse:
     async def __aexit__(self, *args):
         pass
 
-    async def aiter_bytes(self, chunk_size):
+    async def iter_bytes(self, chunk_size):
         for chunk in self.chunks:
             yield chunk
+
+
+@pytest.mark.asyncio
+async def test_synthesizer_uses_real_sdk_stream_contract():
+    """Mock only HTTP so an invented SDK response method cannot pass tests."""
+    import httpx
+    from openai import AsyncOpenAI
+
+    pcm = b"\x00\x00\x01\x00"
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, headers={"content-type": "audio/pcm"}, content=pcm,
+    ))
+    async with AsyncOpenAI(api_key="offline-test-key", max_retries=0,
+                           http_client=httpx.AsyncClient(transport=transport)) as client:
+        chunks = [chunk async for chunk in Synthesizer(client=client).stream("Привет", "ru")]
+    assert b"".join(chunks) == pcm
 
 
 class FakeSpeech:
