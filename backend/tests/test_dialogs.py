@@ -5,6 +5,7 @@ The assertions concern graph state and action effects, not scripted bot prose.
 """
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -140,7 +141,7 @@ async def test_sample_cancellation_previews_then_executes_after_explicit_yes():
     graph, router, engine = dialogue_graph(request)
     first = await run_turn(graph, "D07", "1", request["text"])
     assert first.status == "collecting_slots"
-    before = engine.sessions["D07"].state["policies"].copy()
+    before = deepcopy(engine.sessions["D07"].state["policies"])
     preview = await run_turn(graph, "D07", "2", phone["text"])
     assert preview.status == "awaiting_confirmation"
     assert preview.pending_confirmation["name"] == "cancel_policy"
