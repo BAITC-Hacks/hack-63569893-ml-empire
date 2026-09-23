@@ -297,6 +297,38 @@ async def test_urgent_handoff_preserves_secondary_intent(setup_graph):
 
 
 @pytest.mark.asyncio
+async def test_victim_claim_uses_culprit_policy_in_preview_and_execution(setup_graph):
+    from app.graph import run_turn
+    graph, engine = setup_graph(decision("SC12", culprit_vehicle_plate="101AAA02",
+                                         incident_date="2026-09-28", incident_description="Rear-end collision",
+                                         phone="+77010000005"))
+    preview = await run_turn(graph, "victim", "1", "Заявление по ДТП с 101AAA02")
+    assert preview.status == "awaiting_confirmation"
+    assert preview.pending_confirmation["inputs"]["policy_number"] == "SQ-OGPO-103990"
+    assert engine.sessions["victim"].count("claims") == 4
+
+    confirmed = await run_turn(graph, "victim", "2", "Да, подтверждаю")
+    assert confirmed.status == "completed"
+    claim = engine.sessions["victim"].state["claims"][-1]
+    assert claim["policy_number"] == "SQ-OGPO-103990"
+    assert claim["client_id"] == "C008"
+
+
+@pytest.mark.asyncio
+async def test_victim_claim_with_expired_culprit_policy_never_previews_or_creates_another_claim(setup_graph):
+    from app.graph import run_turn
+    graph, engine = setup_graph(decision("SC12", culprit_vehicle_plate="222ABC17",
+                                         incident_date="2026-09-28", incident_description="Rear-end collision",
+                                         phone="+77010000005"))
+    result = await run_turn(graph, "expired-culprit", "1", "Заявление по ДТП с 222ABC17")
+    assert result.status == "handoff"
+    assert result.pending_confirmation is None
+    assert engine.sessions["expired-culprit"].count("claims") == 4
+    assert not engine.sessions["expired-culprit"].pending
+    assert engine.sessions["expired-culprit"].state["transfers"]
+
+
+@pytest.mark.asyncio
 async def test_slot_continuation_preserves_previous_action_facts(setup_graph):
     from app.graph import run_turn
     graph, engine = setup_graph(decision("SC06", trip_country="Turkey", trip_start="2026-10-02", trip_end="2026-10-05", travelers_count="1", traveler_max_age="30"))

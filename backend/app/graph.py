@@ -244,6 +244,8 @@ def build_graph(catalog: Catalog, router: LLMRouter, action_engine: ActionEngine
             values.setdefault("franchise", 0)
         if name == "get_policy" and values.get("culprit_vehicle_plate"):
             values["vehicle_plate"] = values["culprit_vehicle_plate"]
+        if name == "create_claim" and sid == "SC12" and facts.get("policy_number"):
+            values["policy_number"] = facts["policy_number"]
         if name == "calc_ogpo_price" and sid == "SC02":
             # Region is derived from the published plate map; vehicle type must be supplied.
             pricing = catalog.knowledge_base["products"]["ogpo"]["pricing"]
@@ -304,6 +306,8 @@ def build_graph(catalog: Catalog, router: LLMRouter, action_engine: ActionEngine
             result = invoke_action(state, name, inputs)
             if "error" in result or result.get("manual_quote_required"):
                 return _record(transfer(state), "act", reason="action_requires_help")
+            if state["active_scenario"] == "SC12" and name == "get_policy" and result.get("status") != "active":
+                return _record(transfer(state), "act", reason="culprit_policy_inactive")
         state.update(status="completed", next_node="respond")
         return _record(state, "act")
 
