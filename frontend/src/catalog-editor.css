@@ -1,5 +1,3 @@
-.catalog-intro { margin: 0 0 20px; }
-.catalog-intro h1 { color: var(--text); font-size: 25px; letter-spacing: -.04em; margin: 0; }
 .catalog-editor { color: var(--text); min-width: 0; }
 .catalog-toolbar, .catalog-apply { display: flex; flex-wrap: wrap; gap: 8px; }
 .catalog-editor button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 9px 13px; border: 1px solid #d5e1da; background: #fdfefd; border-radius: 9px; color: #335a48; font-size: 12px; font-weight: 700; }

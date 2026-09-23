@@ -1,11 +1,8 @@
-.evaluation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-bottom: 22px; }
-.evaluation-heading h1 { margin: 0; font-size: 24px; letter-spacing: -.045em; }
-.evaluation-heading p:last-child { max-width: 72ch; color: #476356; line-height: 1.65; margin: 10px 0 0; font-size: 14px; }
 .evaluation-lab { --evaluation-surface: oklch(99% .005 165); --evaluation-line: oklch(88% .015 165); color: var(--text); background: var(--evaluation-surface); padding: 28px; border: 1px solid var(--evaluation-line); border-radius: 18px; min-width: 0; }
 .evaluation-lab h3 { font-size: 17px; letter-spacing: -.02em; margin: 0 0 15px; }
 .evaluation-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; border: 1px solid #9ab5a7; background: #edf6f1; color: #075d48; border-radius: 9px; min-height: 42px; padding: 10px 14px; font-weight: 750; font-size: 13px; }
 .evaluation-button:hover:not(:disabled) { background: #def0e6; }
-.evaluation-import { padding: 23px 0; border-block: 1px solid var(--evaluation-line); }
+.evaluation-import { padding: 0 0 23px; border-bottom: 1px solid var(--evaluation-line); }
 .evaluation-file-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .evaluation-file-grid fieldset { min-width: 0; border: 1px solid var(--evaluation-line); border-radius: 10px; padding: 15px; margin: 0; }
 .evaluation-file-grid legend { padding: 0 6px; font-size: 14px; font-weight: 800; }
@@ -43,5 +40,5 @@
 .evaluation-check input { width: 17px; height: 17px; accent-color: #00805f; }
 .evaluation-comparison { padding-top: 24px; margin-top: 30px; border-top: 1px solid var(--evaluation-line); }
 .evaluation-comparison > p { font-size: 13px; line-height: 1.7; color: #476356; max-width: 85ch; }
-@media (max-width: 850px) { .evaluation-columns { grid-template-columns: 1fr; gap: 22px; } .evaluation-heading { flex-direction: column; gap: 16px; } }
+@media (max-width: 850px) { .evaluation-columns { grid-template-columns: 1fr; gap: 22px; } }
 @media (max-width: 550px) { .evaluation-lab { padding: 18px 14px; } .evaluation-file-grid { grid-template-columns: 1fr; gap: 17px; } .evaluation-lab th, .evaluation-lab td { padding: 10px; } .evaluation-comparison table, .evaluation-scroll-table table { min-width: 540px; } }

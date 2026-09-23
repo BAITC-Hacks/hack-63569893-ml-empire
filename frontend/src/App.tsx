@@ -9,6 +9,7 @@ import { maskPersonalData } from './session-state';
 import { useVoiceSession } from './useVoiceSession';
 import { SupervisorPanel, SessionMetrics } from './components/SupervisorPanel';
 import { MicrophoneSettings } from './components/MicrophoneSettings';
+import { PageHeading } from './components/PageHeading';
 import { displayTraceValue } from './supervisor-model';
 import { elapsedSeconds, errorText, formatDuration } from './client-state';
 import { ConversationPageFollow } from './conversation-page-follow';
@@ -165,7 +166,7 @@ export default function App() {
     </div></header>
 
     <main className="page-main">
-      {section === 'conversation' && <div className="page-intro"><div><h1>{t.nav}</h1><p>{t.intro}</p></div></div>}
+      {section === 'conversation' && <PageHeading title={t.nav} subtitle={t.intro} />}
       {import.meta.env.VITE_TEST_MODE === 'true' && <div className="preview-banner" role="status">{language === 'ru' ? 'Тестовый API: синтетические ответы, без LLM/STT/TTS и реальных операций.' : 'Тест API: синтетикалық жауаптар, LLM/STT/TTS және нақты операциялар жоқ.'}</div>}
       <Suspense fallback={<p role="status">{language === 'ru' ? 'Загружаем инструменты…' : 'Құралдар жүктелуде…'}</p>}>
         {visited.includes('catalog') && <div hidden={section !== 'catalog'}><CatalogEditor language={language} /></div>}

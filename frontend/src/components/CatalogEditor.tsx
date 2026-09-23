@@ -5,6 +5,7 @@ import sourceActions from '../../../datas/actions.json';
 import sourceSlots from '../../../datas/slots.json';
 import { CATALOG_STORAGE_KEY, CatalogValidationError, MAX_CATALOG_BYTES, createScenario, parseCatalog, removeScenario, replaceCatalogEntry, restoreCatalogDraft, serializeCatalog } from '../catalog-model';
 import type { CatalogDocument, CatalogIssue, CatalogReferences } from '../catalog-model';
+import { PageHeading } from './PageHeading';
 import '../catalog-editor.css';
 
 const baseline = sourceCatalog as CatalogDocument;
@@ -86,7 +87,7 @@ export function CatalogEditor({ language }: { language: 'ru' | 'kk' }) {
   const filteredSystem = catalog.system_intents.filter(item => `${item.id} ${item.description}`.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()));
   const issues = [...importIssues, ...validation.issues];
   return <section className="catalog-editor" aria-labelledby="catalog-title">
-    <header className="catalog-intro"><h1 id="catalog-title">{t.title}</h1></header>
+    <PageHeading id="catalog-title" title={t.title} subtitle={language === 'ru' ? 'Настраивайте сценарии и ответы для каждого обращения.' : 'Әр өтінішке арналған сценарийлер мен жауаптарды баптаңыз.'} />
     <div className="catalog-toolbar">
       <button type="button" onClick={() => { const value = createScenario(catalog, refs); install(value, value.scenarios.at(-1)!.scenario_id); }} disabled={dirty}><Plus size={16} />{t.add}</button>
       <button type="button" onClick={() => fileInput.current?.click()} disabled={dirty}><FileUp size={16} />{t.import}</button>

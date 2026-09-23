@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Download, Upload, X } from 'lucide-react'
+import { PageHeading } from './PageHeading'
 import reference from '../../../datas/dev_utterances.json'
 import catalog from '../../../datas/scenarios.json'
 import { compareRuns, evaluateRun, MAX_EVALUATION_BYTES, parseEvaluationRun, serializeEvaluationReport, type EvaluationGroup, type EvaluationImportError, type EvaluationRun } from '../evaluation-model'
@@ -105,10 +106,11 @@ export function EvaluationLab({ language }: { language: 'ru' | 'kk' }) {
   const breakdownRow = (label: string, group: EvaluationGroup) => <tr key={label}><th scope="row">{label}</th><td>{group.n}</td><td>{percent(group.primaryAccuracy)}</td><td>{percent(group.fullMatch)}</td></tr>
   const routeName = (value: string) => value === 'MISSING' ? t.missingResult : value === 'NO_ROUTE' ? t.noRoute : value
 
-  return <section className="evaluation-lab" aria-labelledby="evaluation-title">
-    <header className="evaluation-heading"><div><h1 id="evaluation-title">{t.title}</h1><p>{t.intro}</p></div>
+  return <section className="evaluation-page" aria-labelledby="evaluation-title">
+    <PageHeading id="evaluation-title" title={t.title} subtitle={t.intro} actions={
       <button className="evaluation-button" disabled={!runs.full && !runs.fast} onClick={() => download(serializeEvaluationReport(rows, runs.full, runs.fast))}><Download size={16} />{t.export}</button>
-    </header>
+    } />
+    <div className="evaluation-lab">
     <section className="evaluation-import" aria-labelledby="evaluation-import-title"><h3 id="evaluation-import-title">{t.import}</h3><p className="evaluation-note">{t.importHelp}</p>
       <div className="evaluation-file-grid">{(['full', 'fast'] as const).map(slot => <fieldset key={slot}><legend>{slotNames[slot]}</legend>
         <label className="evaluation-file"><Upload size={16} />{t.file}<input type="file" accept=".json,application/json" aria-label={`${t.file}: ${slotNames[slot]}`} onChange={event => { void loadFile(event.target.files?.[0], slot); event.target.value = '' }} /></label>
@@ -142,5 +144,6 @@ export function EvaluationLab({ language }: { language: 'ru' | 'kk' }) {
       {comparison.paired ? <><p className="evaluation-note">{t.pairedNote}</p><div className="evaluation-table-wrap" tabIndex={0} role="region" aria-label={t.comparison}><table><thead><tr><th>{t.metric}</th><th>{slotNames.full}</th><th>{slotNames.fast}</th><th>{t.difference}</th></tr></thead><tbody><tr><th scope="row">{t.primary}</th><td>{percent(comparison.full.primaryAccuracy)}</td><td>{percent(comparison.fast.primaryAccuracy)}</td><td>{difference(comparison.primaryAccuracyDelta)}</td></tr><tr><th scope="row">{t.full}</th><td>{percent(comparison.full.fullMatch)}</td><td>{percent(comparison.fast.fullMatch)}</td><td>{difference(comparison.fullMatchDelta)}</td></tr>{comparison.latency && <tr><th scope="row">{t.median} · {t.stages[comparison.latency.stage]}</th><td>{ms(comparison.latency.fullMedianMs)}</td><td>{ms(comparison.latency.fastMedianMs)}</td><td>{ms(comparison.latency.fastMedianMs - comparison.latency.fullMedianMs)}</td></tr>}</tbody></table></div><p>{t.wins}: {comparison.fastWins} · {t.losses}: {comparison.fastLosses}</p></> : <p>{t.noPaired}</p>}
       {comparison.latency ? <p>{t.timingDelta}: {ms(comparison.latency.medianDeltaMs)} ({comparison.latency.n} {t.supplied}).</p> : <p>{t.timingUnavailable}</p>}<p className="evaluation-note">{t.timingNote}</p>
     </>}</section>
+    </div>
   </section>
 }
