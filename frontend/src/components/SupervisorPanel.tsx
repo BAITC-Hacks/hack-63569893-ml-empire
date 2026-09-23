@@ -4,6 +4,7 @@ import type { CatalogItem, Scenario, Turn } from '../types';
 import { asRecord, displayTraceValue, filterTurns, finiteTiming, getActions, getHandoff, getScenarioView, getSessionMetrics, getSlots, maskTraceValue, serializeTrace } from '../supervisor-model';
 import type { SlotView, TraceFilters } from '../supervisor-model';
 import './supervisor.css';
+import { AffectPanel } from './AffectPanel';
 
 const labels = {
   ru: {
@@ -170,6 +171,7 @@ export function SupervisorPanel({ turn, turns, selectedId, onSelect, catalog, la
       {visibleTurn.status === 'clarify' && <section className="sv-section"><h3><CircleHelp size={16} />{t.clarification}</h3><p>{visibleTurn.reply ? displayTraceValue(visibleTurn.reply) : t.unknown}</p></section>}
       {(handoff || visibleTurn.status === 'handoff') && <section className="sv-section sv-handoff"><h3><Headphones size={16} />{t.handoff}</h3>{handoff ? <><dl className="sv-pairs"><div><dt>{t.reason}</dt><dd>{handoff.reason ? displayTraceValue(handoff.reason) : t.unknown}</dd></div><div><dt>{t.queue}</dt><dd>{handoff.queue ? displayTraceValue(handoff.queue) : t.unknown}</dd></div><div><dt>{t.status}</dt><dd>{phrase(handoff.status, t)}</dd></div><div><dt>{t.context}</dt><dd>{handoff.context == null ? t.unknown : displayTraceValue(handoff.context)}</dd></div><div><dt>{t.active}</dt><dd>{handoff.activeScenario == null ? t.unknown : displayTraceValue(handoff.activeScenario)}</dd></div></dl>{handoff.slots.length > 0 && <Slots slots={handoff.slots} t={t} />}</> : <p>{t.handoffUnknown}</p>}</section>}
       {(visibleTurn.error || asRecord(visibleTurn)?.errorCode || visibleTurn.status === 'error') && <p className="sv-error" role="status">{t.error}</p>}
+      <AffectPanel trace={visibleTurn.trace} language={language} />
       <Latency turn={visibleTurn} t={t} />
       <section className="sv-export"><div><button type="button" onClick={() => void copyTrace()}><Copy size={14} />{t.copy}</button><button type="button" onClick={downloadTrace}><Download size={14} />{t.download}</button></div><p className="sv-help">{t.exportNote}</p>{copyMessage && <p role="status" className="sv-copy-status"><Check size={14} />{copyMessage}</p>}</section>
     </div>}

@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSession, sessionSnapshot, textTurn } from './fixture-server.mjs';
 
+test('emotion fixture supplies explicit metadata without claiming model inference', () => {
+  const result = textTurn(createSession(), 'affect-turn', '/emotion');
+  const trace = result.events.find(item => item.type === 'trace.updated').payload;
+  assert.deepEqual(trace.affect, { emotion:'concerned', response_tone:'empathetic', source:'text', confidence:.72 });
+  assert.match(result.events.find(item => item.type === 'agent.text').payload.text, /Тестовый сервер/);
+});
+
 test('fixture creates a safe pending preview and contract snapshot for a text turn', () => {
   const session = createSession();
   const result = textTurn(session, 'turn-a', 'Проверка КАСКО');

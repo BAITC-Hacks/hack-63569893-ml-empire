@@ -17,7 +17,7 @@ const CATALOG = [
   { scenario_id: 'SC20', name: 'Запись на осмотр автомобиля', priority: 'normal' },
   { scenario_id: 'SC11', name: 'ДТП произошло только что', priority: 'urgent' },
 ];
-const COMMANDS = new Set(['/handoff', '/slots', '/error', '/mixed', '/partial-metrics', '/context', '/audio']);
+const COMMANDS = new Set(['/handoff', '/slots', '/error', '/mixed', '/partial-metrics', '/context', '/audio', '/emotion']);
 
 function fixtureRoute(language) {
   return {
@@ -118,6 +118,7 @@ function commandTurn(session, turnId, command) {
     ...route, transcript, actions, handoff,
     latency_ms: { stt: 0, triage: 5, router: 40, response: 8, tts_first_audio: 0, total: 53 },
     client_first_audio_ms: null,
+    ...(command === '/emotion' ? { affect: { emotion:'concerned', response_tone:'empathetic', source:'text', confidence:.72 } } : {}),
   };
   if (command === '/partial-metrics') {
     events.push(event(session, 'trace.updated', turnId, { ...session.last_trace, latency_ms: { stt: 0, triage: 5, router: 40, tts_first_audio: 0 } }));

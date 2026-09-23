@@ -1,4 +1,5 @@
 import { maskPersonalData } from './session-state.ts';
+import { readAffect } from './affect-model.ts';
 import type { ActionPreview, CatalogItem, Scenario, Turn } from './types';
 
 type Data = Record<string, unknown>;
@@ -152,6 +153,7 @@ export function displayTraceValue(value: unknown, key = ''): string {
 
 export function serializeTrace(turn: Turn): string {
   const trace = asRecord(turn.trace);
+  const affect = readAffect(trace);
   const traceKeys = ['actions', 'latency_ms', 'client_first_audio_ms', 'handoff', 'active_scenario', 'pending_scenarios', 'suspended_scenarios', 'slots', 'is_continuation', 'clarification'];
   const route = asRecord(turn.route);
   const routeKeys = ['scenarios', 'alternatives', 'reason', 'language', 'slots', 'source', 'active_scenario', 'pending_scenarios', 'suspended_scenarios', 'is_continuation'];
@@ -160,7 +162,7 @@ export function serializeTrace(turn: Turn): string {
     schema: 'voice-router.trace.v1', turn_id: turn.id, mode: turn.mode,
     transcript: turn.text, language: turn.route?.language ?? turn.language,
     reply: turn.reply, status: turn.status, route: pick(route, routeKeys),
-    trace: pick(trace, traceKeys), confirmation_preview: turn.preview,
+    trace: trace ? { ...pick(trace, traceKeys), affect: affect ? {emotion: affect.emotion, response_tone: affect.tone, source: affect.source, confidence: affect.confidence} : null } : null, confirmation_preview: turn.preview,
     // Raw error strings can contain backend diagnostics; omit them from exports.
     has_issue: Boolean(turn.error) || Boolean(asRecord(turn)?.errorCode), restored: Boolean(turn.restored),
   }), null, 2);

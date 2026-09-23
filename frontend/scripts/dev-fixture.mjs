@@ -72,7 +72,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (stopping) await service.stop();
     else {
       console.log(`\nUI: ${service.uiUrl}\nTest API: ${service.apiUrl}`);
-      console.log('Commands: /handoff /slots /error /mixed /partial-metrics /context /audio /disconnect');
+      console.log('Commands: /handoff /slots /error /mixed /partial-metrics /context /audio /emotion /disconnect');
       console.log('/audio plays a synthetic 300 ms tone, not TTS. Microphone input is not emulated.');
       console.log('Ctrl+C stops both owned services. Occupied ports are never killed or replaced.\n');
     }
