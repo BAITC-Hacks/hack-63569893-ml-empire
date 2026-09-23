@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+from typing import Literal
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "datas"
@@ -19,6 +20,9 @@ REQUIRED_DATA_FILES = (
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path(os.getenv("DATA_DIR", DEFAULT_DATA_DIR)))
     router_model: str = field(default_factory=lambda: os.getenv("ROUTER_MODEL", "gpt-6-sol"))
+    router_reasoning_effort: Literal["none", "low"] = field(
+        default_factory=lambda: os.getenv("ROUTER_REASONING_EFFORT", "none")
+    )
     router_timeout_seconds: float = 15.0
     frontend_origin: str = field(default_factory=lambda: os.getenv("FRONTEND_ORIGIN", "http://localhost:5173"))
 
@@ -31,6 +35,8 @@ class Settings:
             raise ValueError(f"data_dir is missing required files: {', '.join(missing)}")
         if not self.router_model.strip():
             raise ValueError("router_model must not be blank")
+        if self.router_reasoning_effort not in ("none", "low"):
+            raise ValueError("router_reasoning_effort must be none or low")
         if self.router_timeout_seconds <= 0:
             raise ValueError("router_timeout_seconds must be positive")
         if self.frontend_origin == "*" or not self.frontend_origin.startswith(("http://", "https://")):
