@@ -51,6 +51,16 @@ The audio adapters default to `gpt-live-transcribe` for speech recognition and `
 
 For the non-Docker commands, the root `.env` file is loaded explicitly by `--env-file .env`. When using only exported environment variables, omit that flag. Neither the application nor the evaluation script loads `.env` automatically; Docker Compose handles its own `.env` interpolation as described above.
 
+### Safe speech-recognition diagnostics
+
+STT failures produce a warning in the backend logs with `stage` (`init`, `feed`, or `finish`), an allowlisted `code`, `audio_bytes`, `audio_ms`, and `frames`. Audio totals count valid PCM received from the client, including a chunk whose upstream send failed; they do not prove the provider received it. Duration is calculated for PCM16 mono 24 kHz (48 bytes/ms). No audio, transcript, raw provider error, credentials, or request identifiers are included in these warnings.
+
+```bash
+docker compose logs --since=5m backend | rg 'STT failed'
+```
+
+`empty_audio` means the turn ended without PCM reaching the transcriber; `empty_transcript` means transcription returned no text. `timeout`, connection/HTTP codes, and allowlisted provider codes distinguish upstream failures. Unknown provider codes become `provider_error`, and unexpected application exceptions become `internal_error`. The browser still receives the safe, compatible `stt_unavailable` event. Diagnose the actual failed recording before changing microphone settings or models.
+
 ## Text WebSocket cycle
 
 Create a session, then connect to the returned `ws_path`. For example, with a WebSocket client such as `websocat`:

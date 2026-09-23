@@ -225,3 +225,76 @@ def test_stt_failure_even_with_cleanup_failure_leaves_text_fallback_usable(fail_
             send_text(ws, "fallback")
             assert read_turn(ws)[-1]["payload"]["status"] == "answered"
             assert [call[1] for call in processor.calls] == ["fallback"]
+
+
+@pytest.mark.parametrize("fail_at,audio_bytes,frames", [
+    ("init", 0, 0), ("feed", 4800, 1), ("finish", 9600, 2),
+])
+def test_stt_diagnostics_report_stage_and_audio_totals_without_content(
+    caplog, fail_at, audio_bytes, frames,
+):
+    secret = "sk-secret-private-transcript"
+
+    class FailingSTT(Transcriber):
+        def __init__(self, **kwargs):
+            if fail_at == "init":
+                raise RuntimeError(secret)
+            super().__init__(**kwargs)
+
+        async def feed(self, pcm):
+            if fail_at == "feed":
+                raise RuntimeError(secret)
+
+        async def finish(self):
+            raise RuntimeError(secret)
+
+    with TestClient(create_app(processor=Processor(), transcriber_factory=FailingSTT,
+                              synthesizer=None)) as client:
+        with client.websocket_connect(create_session(client)["ws_path"]) as ws:
+            ws.receive_json()
+            start(ws)
+            if fail_at != "init":
+                ws.send_bytes(b"\x12\x34" * 2400)
+            if fail_at == "finish":
+                ws.send_bytes(b"\x56\x78" * 2400)
+                commit(ws)
+            events = read_turn(ws)
+            assert events[0]["payload"]["code"] == "stt_unavailable"
+            assert events[-1]["payload"]["status"] == "error"
+            send_text(ws, "fallback")
+            assert read_turn(ws)[-1]["payload"]["status"] == "answered"
+
+    logs = [r for r in caplog.records if r.name == "app.api.ws" and "STT failed" in r.message]
+    assert len(logs) == 1
+    message = logs[0].getMessage()
+    assert f"stage={fail_at}" in message
+    assert "code=internal_error" in message
+    assert f"audio_bytes={audio_bytes}" in message
+    assert f"audio_ms={audio_bytes / 48:.1f}" in message
+    assert f"frames={frames}" in message
+    assert secret not in caplog.text + json.dumps(events)
+    assert logs[0].exc_info is None
+
+
+def test_stt_diagnostics_reset_audio_counts_and_distinguish_empty_transcript(caplog):
+    class EmptySTT(Transcriber):
+        async def feed(self, pcm):
+            pass
+
+        async def finish(self):
+            return "  "
+
+    with TestClient(create_app(processor=Processor(), transcriber_factory=EmptySTT,
+                              synthesizer=None)) as client:
+        with client.websocket_connect(create_session(client)["ws_path"]) as ws:
+            ws.receive_json()
+            for turn_id, pcm in [("first", b"\0\0" * 2400), ("second", b"\0\0" * 1200)]:
+                start(ws, turn_id)
+                ws.send_bytes(pcm)
+                commit(ws, turn_id)
+                assert read_turn(ws)[-1]["payload"]["status"] == "error"
+    messages = [r.getMessage() for r in caplog.records if "STT failed" in r.getMessage()]
+    assert len(messages) == 2
+    assert all("code=empty_transcript" in message for message in messages)
+    assert "audio_bytes=4800 audio_ms=100.0 frames=1" in messages[0]
+    assert "audio_bytes=2400 audio_ms=50.0 frames=1" in messages[1]

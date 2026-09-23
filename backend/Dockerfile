@@ -11,8 +11,9 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
 COPY backend/app ./app
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+# Local source edits must rebuild the application wheel, not reuse uv's cached
+# wheel keyed by unchanged project metadata. Dependencies are already installed.
+RUN uv sync --locked --no-dev --no-editable --no-cache
 
 FROM python:3.13-slim-bookworm AS runtime
 

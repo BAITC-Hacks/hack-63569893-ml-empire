@@ -43,7 +43,8 @@ function isScenario(value: unknown): boolean {
     && (value.name === undefined || typeof value.name === 'string')
     && (value.reason === undefined || typeof value.reason === 'string')
     && (value.priority === undefined || ['normal', 'high', 'urgent'].includes(value.priority as string))
-    && (value.confidence_estimate === undefined || (isDuration(value.confidence_estimate) && value.confidence_estimate <= 1));
+    && (value.confidence_estimate === undefined || value.confidence_estimate === null
+      || (isDuration(value.confidence_estimate) && value.confidence_estimate <= 1));
 }
 
 function isScenarioReference(value: unknown): boolean {
