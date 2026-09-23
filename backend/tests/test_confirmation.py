@@ -187,3 +187,56 @@ def test_incomplete_active_dms_policy_returns_declared_error(catalog):
     policy["details"] = {}
     result = actions.call("check_coverage", {"policy_number": policy["policy_number"], "service_name": "lab tests"})
     assert result["error"]["code"] == "policy_inactive"
+
+
+def test_manual_casco_quote_cannot_create_payment_link(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    quote = actions.call("calc_casco_price", {
+        "car_value": 4000000, "car_year": 2013, "franchise": 50000, "package": "Lite",
+    })
+    inputs = {"product_type": "casco", "phone": "+77010000001", **quote}
+    pending = actions.preview("create_policy", inputs)
+    before = json.dumps(actions.state, sort_keys=True)
+    result = actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)
+    assert result["error"]["code"] == "invalid_input"
+    assert json.dumps(actions.state, sort_keys=True) == before
+
+
+def test_casco_policy_requires_numeric_quote_even_when_price_omitted(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"product_type": "casco", "phone": "+77010000001"}
+    pending = actions.preview("create_policy", inputs)
+    result = actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)
+    assert result["error"]["code"] == "invalid_input"
+    assert actions.count("policies") == 11
+
+
+def test_renewal_does_not_treat_missing_premium_as_zero_quote(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    policy = next(p for p in actions.state["policies"] if p["policy_number"] == "SQ-OGPO-102850")
+    policy["premium"] = None
+    inputs = {"policy_number": policy["policy_number"]}
+    pending = actions.preview("renew_policy", inputs)
+    result = actions.call("renew_policy", inputs, action_id=pending.action_id, confirmed=True)
+    assert result["error"]["code"] == "not_eligible"
+    assert actions.count("policies") == 11
+
+
+def test_manual_quote_marker_cannot_be_overridden_by_supplied_number(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"product_type": "casco", "phone": "+77010000001", "price": 1,
+              "manual_quote_required": True}
+    pending = actions.preview("create_policy", inputs)
+    result = actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)
+    assert result["error"]["code"] == "invalid_input"
+    assert actions.count("policies") == 11
+
+
+@pytest.mark.parametrize("price", [float("nan"), float("inf")])
+def test_nonfinite_price_cannot_create_payment_link(catalog, price):
+    actions = ActionEngine(catalog).new_session("call-1")
+    inputs = {"product_type": "casco", "phone": "+77010000001", "price": price}
+    pending = actions.preview("create_policy", inputs)
+    result = actions.call("create_policy", inputs, action_id=pending.action_id, confirmed=True)
+    assert result["error"]["code"] == "invalid_input"
+    assert actions.count("policies") == 11

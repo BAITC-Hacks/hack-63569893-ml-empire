@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, timedelta
 import json
+import math
 import re
 from uuid import uuid4
 
@@ -232,7 +233,8 @@ class SessionActions:
         if age > pricing["max_car_age"][package]:
             return self._error("not_eligible", "Car exceeds maximum age")
         if age > 10:
-            return self._error("not_eligible", "No published rate for this car age; contact an operator")
+            return {"price": None, "manual_quote_required": True,
+                    "reason": "Eligible car; no published rate for this age. Contact an operator for a quote."}
         rate = pricing["rate_by_car_age"]["0-3" if age <= 3 else "4-7" if age <= 7 else "8-10"]
         return {"price": round(value * rate * pricing["franchise_coef"][franchise] * pricing["package_coef"][package])}
 
@@ -275,6 +277,13 @@ class SessionActions:
         product, phone = inputs.get("product_type"), inputs.get("phone")
         if product not in self.catalog.knowledge_base["products"] or not _valid_phone(phone):
             return self._error("invalid_input", "Product and valid phone are required")
+        quoted_price = inputs.get("price")
+        if inputs.get("manual_quote_required") is True:
+            return self._error("invalid_input", "Manual quote requires an operator before issuing a payment link")
+        if product == "casco" or "price" in inputs:
+            if (isinstance(quoted_price, bool) or not isinstance(quoted_price, (int, float))
+                    or not math.isfinite(quoted_price) or quoted_price <= 0):
+                return self._error("invalid_input", "A numeric quoted price is required before issuing a payment link")
         details = {}
         if product == "dms":
             package = inputs.get("package")
@@ -286,7 +295,7 @@ class SessionActions:
         today = date.fromisoformat(self.state["meta"]["as_of_date"])
         self.state["policies"].append({"policy_number": number, "client_id": client["client_id"] if client else None,
             "product": product, "start_date": today.isoformat(), "end_date": (today + timedelta(days=364)).isoformat(),
-            "premium": inputs.get("price"), "details": details, "status": "pending_payment"})
+            "premium": quoted_price, "details": details, "status": "pending_payment"})
         self.state.setdefault("sms", []).append({"phone": phone, "kind": "payment_link", "policy_number": number})
         return {"policy_number": number}
 
@@ -301,7 +310,9 @@ class SessionActions:
         if old_end > today + timedelta(days=60):
             return self._error("not_eligible", "Policy is not near renewal")
         number = self._new_id(f"SQ-{policy['product'].upper()}", "policies")
-        premium = policy.get("premium") or 0
+        premium = policy.get("premium")
+        if isinstance(premium, bool) or not isinstance(premium, (int, float)) or premium <= 0:
+            return self._error("not_eligible", "No quoted renewal premium; contact an operator")
         self.state["policies"].append(dict(deepcopy(policy), policy_number=number,
             start_date=(max(today, old_end + timedelta(days=1))).isoformat(),
             end_date=(max(today, old_end + timedelta(days=1)) + timedelta(days=364)).isoformat()))

@@ -148,13 +148,24 @@ def test_unrecognized_travel_country_is_invalid_input(catalog):
     assert result["error"]["code"] == "invalid_input"
 
 
-def test_casco_lite_older_than_pricing_table_requires_operator(catalog):
+@pytest.mark.parametrize("car_year", [2011, 2013, 2015])
+def test_casco_lite_eligible_age_without_rate_needs_manual_quote(catalog, car_year):
     actions = ActionEngine(catalog).new_session("call-1")
     result = actions.call("calc_casco_price", {
-        "car_value": 4000000, "car_year": 2013, "franchise": 50000, "package": "Lite",
+        "car_value": 4000000, "car_year": car_year, "franchise": 50000, "package": "Lite",
+    })
+    assert result["price"] is None
+    assert result["manual_quote_required"] is True
+    assert "operator" in result["reason"].lower()
+    assert "error" not in result
+
+
+def test_casco_lite_over_max_age_is_not_eligible(catalog):
+    actions = ActionEngine(catalog).new_session("call-1")
+    result = actions.call("calc_casco_price", {
+        "car_value": 4000000, "car_year": 2010, "franchise": 50000, "package": "Lite",
     })
     assert result["error"]["code"] == "not_eligible"
-    assert "operator" in result["error"]["message"].lower()
 
 
 @pytest.mark.parametrize("name", ["create_policy", "renew_policy", "update_policy", "cancel_policy", "create_claim", "create_dispute", "book_inspection", "book_appointment", "update_contact"])
