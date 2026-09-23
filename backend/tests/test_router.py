@@ -149,6 +149,19 @@ async def test_legitimate_unclear_intent_has_no_routing_error(catalog):
 
 
 @pytest.mark.asyncio
+async def test_empty_model_selection_marks_routing_error(catalog):
+    response = answer("SC19")
+    response["scenarios"] = []
+    response["needs_clarification"] = True
+    decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(response)).route(
+        "Нужна помощь", RouterContext.empty()
+    )
+    assert [item.scenario_id for item in decision.scenarios] == ["SYS_UNCLEAR"]
+    assert decision.needs_clarification
+    assert decision.routing_error == "ValueError"
+
+
+@pytest.mark.asyncio
 async def test_timeout_preserves_known_kazakh_language(catalog):
     decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(asyncio.TimeoutError())).route(
         "Төлем туралы сұрағым бар", RouterContext(language="kk")
@@ -187,7 +200,15 @@ def test_evaluation_requires_explicit_api_key():
 
 
 @pytest.mark.asyncio
-async def test_evaluation_aborts_when_router_reports_model_error(catalog):
-    router = LLMRouter(catalog, structured_model=FakeStructuredModel(RuntimeError("service unavailable")))
-    with pytest.raises(RuntimeError, match=r"U001.*RuntimeError"):
+@pytest.mark.parametrize(
+    ("response", "error_name"),
+    [
+        (RuntimeError("service unavailable"), "RuntimeError"),
+        (answer("SC19") | {"scenarios": [], "needs_clarification": True}, "ValueError"),
+    ],
+    ids=("api_error", "empty_selection"),
+)
+async def test_evaluation_aborts_when_router_reports_model_error(catalog, response, error_name):
+    router = LLMRouter(catalog, structured_model=FakeStructuredModel(response))
+    with pytest.raises(RuntimeError, match=rf"U001.*{error_name}"):
         await evaluate("gpt-6-sol", router=router)

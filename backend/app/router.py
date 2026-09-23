@@ -144,8 +144,6 @@ class LLMRouter:
             if len(slots) != len(result.slots) or set(slots) - self.catalog.slots.keys():
                 raise ValueError("Invalid or duplicate slot names")
             if not result.scenarios:
-                if result.needs_clarification:
-                    return _clarify(result.language)
                 raise ValueError("No scenario selected")
             return RouterDecision(
                 language=result.language,
