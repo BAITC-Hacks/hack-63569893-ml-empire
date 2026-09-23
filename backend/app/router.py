@@ -7,7 +7,7 @@ from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.catalog import Catalog
 from app.config import Settings
@@ -90,8 +90,8 @@ class _CompactDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     l: Literal["ru", "kk"]
-    s: list[_CompactScenario]
-    a: list[str]
+    s: list[_CompactScenario] = Field(min_length=1)
+    a: list[str] = Field(max_length=2)
     v: list[_CompactSlot]
     c: bool
     q: bool
@@ -103,11 +103,12 @@ def build_router_messages(text: str, context: RouterContext, catalog: Catalog):
     lines = [
         "Choose the client's Saqta Insurance intent from the catalog below. Return JSON matching the schema.",
         "Output keys: l=language, s=selected scenarios (i=ID, r=short evidence reason), a=alternatives, v=supplied slots (n=name, v=value), c=continuation, q=needs clarification.",
+        "s must contain at least one primary scenario; never put the only plausible intent in a.",
         "Use only listed IDs. Include all distinct intents in order of mention; put an urgent intent first.",
         "Use not_this_if boundaries to distinguish close scenarios. Never invent a business route.",
-        "For unclear intent choose SYS_UNCLEAR and set needs_clarification=true.",
+        "For unclear intent choose SYS_UNCLEAR as the sole primary scenario and set q=true.",
         "Choose response language ru or kk from the client's dominant language; mixed Kazakh/Russian may be kk.",
-        "Each reason must briefly cite the client's words and the relevant boundary, without hidden reasoning. Keep it to one short sentence.",
+        "Each r must cite the client's words and relevant boundary in 3-8 words, without hidden reasoning.",
         "Give at most two alternatives. Use [] when none are plausible.",
         "Slots must use catalog slot names. Return only supplied nonempty values; use [] when none are supplied.",
         "Catalog:",

@@ -82,6 +82,49 @@ async def test_compact_response_rejects_invalid_ids_slots_and_excess_alternative
     assert decision.scenarios[0].scenario_id == "SYS_UNCLEAR"
 
 
+@pytest.mark.asyncio
+async def test_compact_empty_primary_selection_is_invalid(catalog):
+    response = compact_answer("SC31", alternatives=("SC31",))
+    response["s"] = []
+    decision = await LLMRouter(catalog, structured_model=FakeStructuredModel(response)).route(
+        "Хочу прекратить страховку", RouterContext.empty()
+    )
+    assert decision.scenarios[0].scenario_id == "SYS_UNCLEAR"
+    assert decision.routing_error is not None
+
+
+@pytest.mark.asyncio
+async def test_provider_bound_schema_requires_primary_and_limits_alternatives(catalog, monkeypatch):
+    captured = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured["settings"] = kwargs
+
+        def with_structured_output(self, schema, *, method):
+            captured["schema"] = schema.model_json_schema()
+            return FakeStructuredModel(compact_answer("SC31"))
+
+    monkeypatch.setattr("app.router.ChatOpenAI", FakeChatOpenAI)
+    decision = await LLMRouter(catalog).route("Хочу прекратить страховку", RouterContext.empty())
+
+    assert decision.scenarios[0].scenario_id == "SC31"
+    assert captured["schema"]["properties"]["s"]["minItems"] == 1
+    assert captured["schema"]["properties"]["a"]["maxItems"] == 2
+
+
+@pytest.mark.asyncio
+async def test_compact_prompt_names_actual_clarification_key_and_primary_requirement(catalog):
+    fake = FakeStructuredModel(compact_answer("SC31"))
+    await LLMRouter(catalog, structured_model=fake).route(
+        "Хочу прекратить страховку", RouterContext.empty()
+    )
+    prompt = fake.messages[0].content
+    assert "q=true" in prompt
+    assert "s must contain" in prompt
+    assert "needs_clarification=true" not in prompt
+
+
 @pytest.fixture
 def catalog():
     return Catalog.load(DATA_DIR)
