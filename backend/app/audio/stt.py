@@ -1,0 +1,163 @@
+"""One-turn OpenAI Realtime transcription adapter for PCM16 mono 24 kHz.
+
+Each instance owns one upstream transcription session and one committed item.
+See https://developers.openai.com/api/docs/guides/realtime-transcription.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import inspect
+import json
+import os
+from collections.abc import AsyncIterator, Callable
+from typing import Any
+
+
+_END = object()
+
+
+class Transcriber:
+    def __init__(
+        self,
+        *,
+        connector: Callable[..., Any] | None = None,
+        api_key: str | None = None,
+        model: str = "gpt-live-transcribe",
+        timeout: float = 20.0,
+        on_partial: Callable[[str], Any] | None = None,
+    ) -> None:
+        self._connector = connector
+        self._api_key = api_key
+        self._model = model
+        self._timeout = timeout
+        self._on_partial = on_partial
+        self._socket: Any = None
+        self._reader_task: asyncio.Task[None] | None = None
+        self._final: asyncio.Future[str] | None = None
+        self._committed_id: str | None = None
+        self._completed: dict[str, str] = {}
+        self._partials: dict[str, str] = {}
+        self._partial_queue: asyncio.Queue[str | object] = asyncio.Queue()
+        self._finished = False
+
+    async def _connect(self) -> None:
+        if self._socket is not None:
+            return
+        api_key = self._api_key or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for live transcription")
+        if self._connector is None:
+            from websockets.asyncio.client import connect
+
+            connector = connect
+        else:
+            connector = self._connector
+        self._socket = await asyncio.wait_for(
+            connector(
+                f"wss://api.openai.com/v1/realtime?model={self._model}",
+                additional_headers={"Authorization": f"Bearer {api_key}"},
+            ),
+            timeout=self._timeout,
+        )
+        self._final = asyncio.get_running_loop().create_future()
+        self._reader_task = asyncio.create_task(self._read_events())
+        await self._send(
+            {
+                "type": "session.update",
+                "session": {
+                    "type": "transcription",
+                    "audio": {
+                        "input": {
+                            "format": {"type": "audio/pcm", "rate": 24000},
+                            "transcription": {"model": self._model},
+                            "turn_detection": None,
+                        }
+                    },
+                },
+            }
+        )
+
+    async def _send(self, event: dict[str, Any]) -> None:
+        await self._socket.send(json.dumps(event))
+
+    async def feed(self, pcm: bytes) -> None:
+        """Append complete little-endian PCM16 samples to this turn."""
+        if self._finished:
+            raise RuntimeError("transcription turn has already been committed")
+        if not isinstance(pcm, bytes) or len(pcm) % 2:
+            raise ValueError("PCM16 input must contain complete two-byte samples")
+        if not pcm:
+            return
+        await self._connect()
+        await self._send({"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm).decode("ascii")})
+
+    async def finish(self) -> str:
+        """Commit this turn and wait for its matching final transcript."""
+        if self._finished:
+            raise RuntimeError("transcription turn has already been committed")
+        if self._socket is None:
+            raise ValueError("cannot transcribe an empty audio turn")
+        self._finished = True
+        try:
+            await self._send({"type": "input_audio_buffer.commit"})
+            assert self._final is not None
+            return await asyncio.wait_for(self._final, timeout=self._timeout)
+        finally:
+            await self.aclose()
+
+    async def partials(self) -> AsyncIterator[str]:
+        """Yield cumulative partial text until the upstream session closes."""
+        while True:
+            value = await self._partial_queue.get()
+            if value is _END:
+                return
+            yield value  # type: ignore[misc]
+
+    async def aclose(self) -> None:
+        """Release the upstream connection, including after cancellation."""
+        reader, self._reader_task = self._reader_task, None
+        if reader is not None:
+            reader.cancel()
+            try:
+                await reader
+            except asyncio.CancelledError:
+                pass
+        socket, self._socket = self._socket, None
+        if socket is not None:
+            await socket.close()
+        self._partial_queue.put_nowait(_END)
+
+    async def _read_events(self) -> None:
+        try:
+            while True:
+                event = json.loads(await self._socket.recv())
+                kind = event.get("type")
+                item_id = event.get("item_id")
+                if kind == "input_audio_buffer.committed" and item_id:
+                    self._committed_id = item_id
+                    if item_id in self._completed and self._final and not self._final.done():
+                        self._final.set_result(self._completed[item_id])
+                elif kind == "conversation.item.input_audio_transcription.delta" and item_id:
+                    text = self._partials.get(item_id, "") + event.get("delta", "")
+                    self._partials[item_id] = text
+                    if self._committed_id in (None, item_id):
+                        self._partial_queue.put_nowait(text)
+                        if self._on_partial is not None:
+                            result = self._on_partial(text)
+                            if inspect.isawaitable(result):
+                                await result
+                elif kind == "conversation.item.input_audio_transcription.completed" and item_id:
+                    transcript = event.get("transcript", "")
+                    self._completed[item_id] = transcript
+                    if item_id == self._committed_id and self._final and not self._final.done():
+                        self._final.set_result(transcript)
+                elif kind in {"error", "conversation.item.input_audio_transcription.failed"}:
+                    detail = event.get("error") or event
+                    raise RuntimeError(f"transcription failed: {detail}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if self._final is not None and not self._final.done():
+                self._final.set_exception(exc)
