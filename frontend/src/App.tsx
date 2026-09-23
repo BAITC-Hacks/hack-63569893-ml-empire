@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownLeft, ArrowRight, AudioLines, Check,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Headphones, Languages,
@@ -10,9 +10,14 @@ import { useVoiceSession } from './useVoiceSession';
 import { SupervisorPanel, SessionMetrics } from './components/SupervisorPanel';
 import { displayTraceValue } from './supervisor-model';
 import { elapsedSeconds, errorText, formatDuration } from './client-state';
+import { AudioDiagnostics } from './components/AudioDiagnostics';
+import './lab.css';
 import type { CallPhase, ConnectionStatus, Turn } from './types';
 
 const PREVIEW_TURN_ID = 'preview-turn';
+const CatalogEditor = lazy(() => import('./components/CatalogEditor').then(module => ({default: module.CatalogEditor})));
+const DatasetPlayer = lazy(() => import('./components/DatasetPlayer'));
+const EvaluationLab = lazy(() => import('./components/EvaluationLab').then(module => ({default: module.EvaluationLab})));
 
 const copy = {
   ru: {
@@ -139,10 +144,13 @@ export default function App() {
   const [language, setLanguage] = useState<'ru' | 'kk'>('ru');
   const [textInput, setTextInput] = useState('');
   const [mobileTab, setMobileTab] = useState<'conversation' | 'trace'>('conversation');
+  const [section, setSection] = useState<'conversation'|'diagnostics'|'catalog'|'dataset'|'evaluation'>('conversation');
+  const [visited, setVisited] = useState<string[]>([]);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const {
     session, connection, phase, turns, selectedId, setSelectedId, catalog, error,
     preview, pendingPreview, muted, beginCall, reconnect, endCall: finishCall, resetCall,
-    ended, startedAt, endedAt, level, devices, deviceId, setDeviceId, micMode, setMicMode, silenceMs, setSilenceMs, refreshDevices, stopPlayback,
+    ended, startedAt, endedAt, level, devices, deviceId, setDeviceId, micMode, setMicMode, silenceMs, setSilenceMs, speechThreshold, setSpeechThreshold, refreshDevices, stopPlayback,
     submitText: sendText, startRecording, finishRecording, replay, hasAudio,
     dismissError, toggleMuted, showPreview: enterPreview,
   } = useVoiceSession();
@@ -180,7 +188,7 @@ export default function App() {
       <div className="brand"><HalykMark /><span>Halyk</span><span className="brand-divider" /><span className="product-name">Voice Router</span></div>
       <nav className="header-nav" aria-label={t.workspace}><span className="nav-active">{t.workspace}</span><span className="nav-muted">AI Lab</span></nav>
       <div className="header-actions"><button className="language-button" onClick={() => setLanguage(language === 'ru' ? 'kk' : 'ru')} aria-label={language === 'ru' ? 'Переключить язык интерфейса' : 'Интерфейс тілін ауыстыру'}><Languages size={17} /><span>{language === 'ru' ? 'Рус' : 'Қаз'}</span><ChevronDown size={14} /></button>
-        {hasSession && <button className="header-new" aria-label={t.newCall} onClick={() => { void endCall(); }}><RotateCcw size={16} /><span>{t.newCall}</span></button>}
+        {hasSession && section === 'conversation' && <button className="header-new" aria-label={t.newCall} onClick={() => { void endCall(); }}><RotateCcw size={16} /><span>{t.newCall}</span></button>}
       </div>
     </div></header>
 
@@ -188,6 +196,23 @@ export default function App() {
       <div className="page-intro"><div><p className="eyebrow">HALYK · AI EXPERIENCE</p><h1>{t.nav}</h1><p>{t.intro}</p></div><StatusPill status={connection} phase={phase} preview={preview} t={t} /></div>
       <div className="data-disclosure"><ShieldCheck size={18} /><p>{language === 'ru' ? 'Учебный прототип для трека Halyk на вымышленных сценариях Saqta Insurance. Только синтетические данные: не сообщайте реальные ИИН, телефоны, номера полисов и не загружайте записи клиентов. Это не банковский сервис.' : 'Halyk трегіне арналған Saqta Insurance ойдан шығарылған сценарийлері бар оқу прототипі. Тек синтетикалық деректер: нақты ЖСН, телефон, полис нөмірлері мен клиент жазбаларын қолданбаңыз. Бұл банк қызметі емес.'}</p></div>
       {import.meta.env.VITE_TEST_MODE === 'true' && <div className="preview-banner" role="status">{language === 'ru' ? 'Тестовый API: синтетические ответы, без LLM/STT/TTS и реальных операций.' : 'Тест API: синтетикалық жауаптар, LLM/STT/TTS және нақты операциялар жоқ.'}</div>}
+      <nav className="workspace-navigation" aria-label={language === 'ru' ? 'Разделы приложения' : 'Қолданба бөлімдері'}>{([
+        ['conversation', language === 'ru' ? 'Разговор' : 'Әңгіме'],
+        ['catalog', language === 'ru' ? 'Сценарии' : 'Сценарийлер'],
+        ['dataset', language === 'ru' ? 'Диалоги датасета' : 'Датасет диалогтары'],
+        ['evaluation', language === 'ru' ? 'Оценка и сравнение' : 'Бағалау және салыстыру'],
+        ['diagnostics', language === 'ru' ? 'Микрофон и звук' : 'Микрофон және дыбыс'],
+      ] as const).map(([id,label]) => <button key={id} aria-current={section === id ? 'page' : undefined} disabled={section !== id && (phase !== 'idle' || diagnosticsBusy)} onClick={() => {setVisited(current => current.includes(id) ? current : [...current,id]); setSection(id);}}>{label}</button>)}</nav>
+      <Suspense fallback={<p role="status">{language === 'ru' ? 'Загружаем инструменты…' : 'Құралдар жүктелуде…'}</p>}>
+        {visited.includes('catalog') && <div hidden={section !== 'catalog'}><CatalogEditor language={language} /></div>}
+        {visited.includes('evaluation') && <div hidden={section !== 'evaluation'}><EvaluationLab language={language} /></div>}
+        {visited.includes('dataset') && <div hidden={section !== 'dataset'}><DatasetPlayer language={language} turns={turns} sessionId={session?.session_id ?? null} canSend={canInteract} pendingConfirmation={Boolean(pendingPreview)} onSend={sendText} onNewSession={() => void beginCall()} onSelectTurn={id => {setSelectedId(id); setMobileTab('trace'); setSection('conversation');}} />
+          {error && <p className="lab-error" role="alert">{errorText(error,language)}</p>}
+          {session && connection === 'offline' && <button onClick={() => void reconnect()}>{t.reconnect}</button>}
+        </div>}
+      </Suspense>
+      {section === 'diagnostics' && <AudioDiagnostics language={language} onBusyChange={setDiagnosticsBusy} />}
+      {section === 'conversation' && <>
       {ended && <div className="ended-notice" role="status"><PhoneOff size={17} />{language === 'ru' ? 'Звонок завершён. История и аудио сохранены до нового звонка или перезагрузки.' : 'Қоңырау аяқталды. Тарих пен аудио жаңа қоңырауға не бетті қайта жүктеуге дейін сақталады.'}</div>}
       {error && <div className="error-banner" role="alert"><WifiOff size={18} /><span>{errorText(error, language)}</span><button onClick={dismissError} aria-label={language === 'ru' ? 'Закрыть сообщение' : 'Хабарламаны жабу'}><X size={17} /></button></div>}
       {session && !ended && connection === 'offline' && <div className="reconnect-notice"><WifiOff size={17} /><span>{t.offline}</span><button onClick={() => void reconnect()}>{t.reconnect}</button></div>}
@@ -230,6 +255,7 @@ export default function App() {
               <label>{language === 'ru' ? 'Микрофон' : 'Микрофон'}<select disabled={phase !== 'idle'} value={deviceId} onChange={event => setDeviceId(event.target.value)}><option value="">{language === 'ru' ? 'Системный по умолчанию' : 'Жүйелік әдепкі'}</option>{devices.filter(device => device.deviceId && device.deviceId !== 'default').map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `${language === 'ru' ? 'Микрофон' : 'Микрофон'} ${index + 1}`}</option>)}</select></label>
               <label>{language === 'ru' ? 'Режим записи' : 'Жазу режимі'}<select disabled={phase !== 'idle'} value={micMode} onChange={event => setMicMode(event.target.value as 'hold' | 'auto')}><option value="hold">{language === 'ru' ? 'Удерживать кнопку' : 'Батырманы басып тұру'}</option><option value="auto">{language === 'ru' ? 'Завершать после тишины' : 'Тыныштықтан кейін аяқтау'}</option></select></label>
               {micMode === 'auto' && <label>{language === 'ru' ? 'Пауза до завершения' : 'Аяқтау алдындағы үзіліс'}: {silenceMs / 1000} s<input type="range" min={800} max={2500} step={100} value={silenceMs} disabled={phase !== 'idle'} onChange={event => setSilenceMs(Number(event.target.value))} /></label>}
+              {micMode === 'auto' && <label>{language === 'ru' ? 'Порог речи: ниже для тихого голоса' : 'Сөйлеу шегі: баяу дауыс үшін төмендетіңіз'}: {speechThreshold.toFixed(3)}<input type="range" min="0.005" max="0.08" step="0.005" value={speechThreshold} disabled={phase !== 'idle'} onChange={event => setSpeechThreshold(Number(event.target.value))}/></label>}
               <button onClick={() => void refreshDevices()}>{language === 'ru' ? 'Обновить устройства' : 'Құрылғыларды жаңарту'}</button><p>{language === 'ru' ? 'Имена устройств появятся после разрешения доступа. Определение тишины работает локально; шум может помешать. Реплику всегда можно завершить вручную.' : 'Құрылғы атаулары рұқсат берілгеннен кейін көрінеді. Тыныштық жергілікті анықталады; шу кедергі болуы мүмкін. Репликаны қолмен аяқтауға болады.'}</p>
             </div></details>
             <div className="composer-foot"><span><span className={`tiny-dot ${phase === 'recording' ? 'recording' : ''}`} />{phase === 'preparing' ? t.preparing : phase === 'recording' ? t.listeningNow : micMode === 'hold' ? t.hold : (language === 'ru' ? 'Нажмите, чтобы говорить' : 'Сөйлеу үшін басыңыз')}</span><span>{t.voiceDisclosure}</span></div>
@@ -238,6 +264,7 @@ export default function App() {
         <SupervisorPanel turn={selectedTurn} turns={turns} selectedId={selectedId} onSelect={setSelectedId} catalog={catalog} language={language} />
       </div>
       <SessionMetrics turns={turns} language={language} preview={preview} />
+      </>}
       <footer className="page-footer"><span>Halyk × Voice Router</span><span>{t.voiceDisclosure}</span><span><Wifi size={14} /> {session?.session_id ? `${session.session_id.slice(0, 8)}…` : 'Demo workspace'}</span></footer>
     </main>
   </div>;

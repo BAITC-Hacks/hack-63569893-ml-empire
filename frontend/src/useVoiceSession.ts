@@ -40,6 +40,7 @@ export function useVoiceSession() {
   const [deviceId, setDeviceId] = useState('');
   const [micMode, setMicMode] = useState<'hold' | 'auto'>('hold');
   const [silenceMs, setSilenceMs] = useState(1500);
+  const [speechThreshold, setSpeechThreshold] = useState(0.025);
   const sessionRef = useRef<CreatedSession | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<PcmRecorder | null>(null);
@@ -350,9 +351,9 @@ export function useVoiceSession() {
     }
   }
 
-  function submitText(text: string): boolean {
+  function submitText(text: string): string | null {
     const socket = socketRef.current;
-    if (!text.trim() || preview || connection !== 'ready' || phase !== 'idle' || activeTurnRef.current || !socket) return false;
+    if (!text.trim() || preview || connection !== 'ready' || phase !== 'idle' || activeTurnRef.current || !socket) return null;
     const turn = newTurn('text', text.trim());
     try {
       sendEvent(socket, 'turn.text', turn.id, { text: turn.text });
@@ -362,8 +363,8 @@ export function useVoiceSession() {
       updateTurns((current) => [...current, turn]);
       setSelectedId(turn.id); setPendingPreview(null); setError(''); setPhase('processing');
       void playerRef.current?.unlock().catch(() => setError('playback_failed'));
-      return true;
-    } catch (cause) { setError(errorMessage(cause)); return false; }
+      return turn.id;
+    } catch (cause) { setError(errorMessage(cause)); return null; }
   }
 
   function startRecording() {
@@ -395,7 +396,7 @@ export function useVoiceSession() {
         setError('mic_disconnected'); activeTurnRef.current = null; setPhase('idle');
         socket.close(); // Discard partial PCM on the server; never commit a broken recording.
       },
-      silenceDetection: micMode === 'auto' ? { silenceMs, onSilence: (elapsed: number) => { if (isCurrent()) void finishRecording(elapsed); } } : undefined,
+      silenceDetection: micMode === 'auto' ? { silenceMs, threshold: speechThreshold, onSilence: (elapsed: number) => { if (isCurrent()) void finishRecording(elapsed); } } : undefined,
     }).then(() => {
       if (!isCurrent()) return recorder.dispose();
       sendEvent(socket, 'turn.start', turn.id, { mode: 'audio' });
@@ -453,7 +454,7 @@ export function useVoiceSession() {
   return {
     session, connection, phase, turns, selectedId, setSelectedId, catalog, error,
     preview, pendingPreview, muted, beginCall, reconnect, endCall, resetCall: reset, submitText, startRecording, finishRecording, replay,
-    ended, startedAt, endedAt, level, devices, deviceId, setDeviceId, micMode, setMicMode, silenceMs, setSilenceMs, refreshDevices,
+    ended, startedAt, endedAt, level, devices, deviceId, setDeviceId, micMode, setMicMode, silenceMs, setSilenceMs, speechThreshold, setSpeechThreshold, refreshDevices,
     stopPlayback: () => { playerRef.current?.stopCurrentPlayback(); setPhase(activeTurnRef.current || audioTurnRef.current ? 'processing' : 'idle'); },
     hasAudio: (id: string) => playerRef.current?.hasAudio(id) ?? false,
     dismissError: () => setError(''),
