@@ -87,7 +87,7 @@ async def stream(websocket: WebSocket, session_id: str):
             session.last_trace = redact(deepcopy(trace))
         emit("trace.updated", turn_id, trace)
 
-    async def audio_reply(turn_id, result, start):
+    async def audio_reply(turn_id, result, start, post_stt_start):
         nonlocal audio_turn
         synth = websocket.app.state.synthesizer
         if synth is None:
@@ -113,6 +113,7 @@ async def stream(websocket: WebSocket, session_id: str):
                         traces[turn_id]["latency_ms"].update({
                             "tts_first_audio": (sent_at - tts_start) * 1000,
                             "server_first_audio": (sent_at - start) * 1000,
+                            "post_stt_first_audio": (sent_at - post_stt_start) * 1000,
                         })
                         first = False
             if not began:
@@ -125,6 +126,7 @@ async def stream(websocket: WebSocket, session_id: str):
 
     async def process(turn_id, text=None, transcriber=None, audio_bytes=0, audio_frames=0):
         start = perf_counter()
+        post_stt_start = start
         final_sent = False
         route_sent = False
         agent_sent = False
@@ -138,7 +140,8 @@ async def stream(websocket: WebSocket, session_id: str):
                         text = await transcriber.finish()
                     if not isinstance(text, str) or not text.strip():
                         raise TranscriptionError("empty_transcript")
-                    stt_ms = (perf_counter() - start) * 1000
+                    post_stt_start = perf_counter()
+                    stt_ms = (post_stt_start - start) * 1000
                 except Exception as exc:
                     log_stt_failure("finish", exc, audio_bytes, audio_frames)
                     error(turn_id, "stt_unavailable")
@@ -169,7 +172,7 @@ async def stream(websocket: WebSocket, session_id: str):
             traces[turn_id] = {"actions": result["actions"], "steps": result["trace"],
                      "latency_ms": {**timings, "stt": stt_ms},
                      "handoff": route if result["status"] == "handoff" else None}
-            await audio_reply(turn_id, result, start)
+            await audio_reply(turn_id, result, start, post_stt_start)
             traces[turn_id]["latency_ms"]["total"] = (perf_counter() - start) * 1000
             update_trace(turn_id)
             trace_sent = True

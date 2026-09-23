@@ -87,6 +87,58 @@ def test_audio_commit_is_only_graph_boundary_and_pcm_is_framed():
             assert trace["latency_ms"]["server_first_audio"] >= trace["latency_ms"]["tts_first_audio"]
 
 
+def test_post_stt_first_audio_excludes_transcription_and_stops_at_first_pcm(monkeypatch):
+    import importlib
+
+    clock = [0.0]
+    monkeypatch.setattr(importlib.import_module("app.api.ws"), "perf_counter", lambda: clock[0])
+
+    class DelayedTranscriber(Transcriber):
+        async def finish(self):
+            await asyncio.sleep(0)
+            clock[0] += 0.250
+            return await super().finish()
+
+    class DelayedProcessor(Processor):
+        async def __call__(self, session_id, turn_id, text):
+            clock[0] += 0.050
+            return await super().__call__(session_id, turn_id, text)
+
+    class GatedSynthesizer:
+        def __init__(self):
+            self.resume = threading.Event()
+
+        async def stream(self, text, language):
+            clock[0] += 0.100
+            yield b"\0\0"
+            async with asyncio.timeout(3):
+                while not self.resume.is_set():
+                    await asyncio.sleep(0.001)
+            clock[0] += 2.0
+            yield b"\1\0"
+
+    synth = GatedSynthesizer()
+    with TestClient(create_app(processor=DelayedProcessor(), transcriber_factory=DelayedTranscriber,
+                              synthesizer=synth)) as client:
+        with client.websocket_connect(create_session(client)["ws_path"]) as ws:
+            ws.receive_json()
+            start(ws)
+            ws.send_bytes(b"\0\0")
+            assert ws.receive_json()["type"] == "transcript.partial"
+            commit(ws)
+            for kind in ("transcript.final", "route.decision", "agent.text", "audio.start"):
+                assert ws.receive_json()["type"] == kind
+            assert ws.receive_bytes() == b"\0\0"
+            synth.resume.set()
+            frames = read_mixed_turn(ws)
+            latency = frames[-2]["payload"]["latency_ms"]
+            assert latency["post_stt_first_audio"] == pytest.approx(150)
+            assert latency["stt"] == pytest.approx(250)
+            assert latency["server_first_audio"] == pytest.approx(400)
+            assert latency["tts_first_audio"] == pytest.approx(100)
+            assert latency["total"] == pytest.approx(2400)
+
+
 def test_tts_failure_preserves_answer_and_duplicate_never_reroutes():
     processor = Processor()
     with TestClient(create_app(processor=processor, transcriber_factory=Transcriber,
@@ -101,6 +153,7 @@ def test_tts_failure_preserves_answer_and_duplicate_never_reroutes():
             assert any(e["type"] == "agent.text" for e in events)
             assert any(e["type"] == "error" and e["payload"]["code"] == "tts_unavailable" for e in events)
             assert events[-1]["payload"]["status"] == "answered"
+            assert "post_stt_first_audio" not in events[-2]["payload"]["latency_ms"]
             assert "secret" not in json.dumps(events)
             start(ws)
             assert ws.receive_json()["payload"]["code"] == "invalid_event"
@@ -123,6 +176,7 @@ def test_empty_tts_stream_reports_unavailable_and_keeps_text():
                        for event in events)
             assert "audio.start" not in [event["type"] for event in events]
             assert events[-1]["payload"]["status"] == "answered"
+            assert "post_stt_first_audio" not in events[-2]["payload"]["latency_ms"]
 
 
 def test_playback_ack_is_read_while_tts_waits_and_updates_client_metric():
@@ -142,6 +196,10 @@ def test_playback_ack_is_read_while_tts_waits_and_updates_client_metric():
             synth.resume.set()
             frames = read_mixed_turn(ws)
             assert frames[-2]["payload"]["client_first_audio_ms"] == 1410
+            latency = frames[-2]["payload"]["latency_ms"]
+            assert latency["post_stt_first_audio"] == latency["server_first_audio"]
+            assert latency["post_stt_first_audio"] >= latency["tts_first_audio"]
+            assert latency["stt"] == 0
         summary = client.get(f'/api/v1/sessions/{session["session_id"]}').json()
         assert summary["last_trace"]["client_first_audio_ms"] == 1410
 
