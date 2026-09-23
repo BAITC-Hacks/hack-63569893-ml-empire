@@ -77,6 +77,7 @@ class TurnRoute(BaseModel):
     is_continuation: bool = False
     needs_clarification: bool = False
     source: Literal["llm", "continuation", "confirmation"]
+    routing_error: str | None = None
 
 
 class TurnResult(BaseModel):
@@ -101,6 +102,7 @@ class CallState(TypedDict, total=False):
     client_id: str | None
     active_scenario: str | None
     pending_scenarios: list[str]
+    pending_scenario_slots: dict[str, dict[str, dict[str, Any]]]
     suspended_scenarios: list[dict]
     slots: dict[str, dict[str, Any]]
     pending_confirmation: dict | None

@@ -79,7 +79,7 @@ def build_graph(catalog: Catalog, router: LLMRouter, action_engine: ActionEngine
     def ingest(raw):
         state = deepcopy(raw)
         for name, default in {"language": "ru", "client_id": None, "active_scenario": None,
-                              "pending_scenarios": [], "suspended_scenarios": [], "slots": {},
+                              "pending_scenarios": [], "pending_scenario_slots": {}, "suspended_scenarios": [], "slots": {},
                               "pending_confirmation": None, "clarification_count": 0,
                               "recent_turns": [], "offer_resume": False}.items():
             state.setdefault(name, default)
@@ -99,13 +99,17 @@ def build_graph(catalog: Catalog, router: LLMRouter, action_engine: ActionEngine
                 saved = state["suspended_scenarios"].pop()
                 state.update(saved)
             elif state["pending_scenarios"]:
-                state.update(active_scenario=state["pending_scenarios"].pop(0), slots={}, facts={}, action_index=0)
+                sid = state["pending_scenarios"].pop(0)
+                state.update(active_scenario=sid, slots=state["pending_scenario_slots"].pop(sid, {}), facts={}, action_index=0)
             state.update(offer_resume=False, next_node="identify")
             state["route"] = _route(state, "continuation")
             return _record(state, "ingest", resumed=True)
         expected = state.get("expected_slot")
-        if expected in catalog.slots and state.get("active_scenario") in catalog.scenarios and not _looks_like_switch(text):
-            value = store_slot(state, expected, text, "user")
+        if expected in catalog.slots and state.get("active_scenario") in catalog.scenarios and not _looks_like_switch(text) and catalog.slots[expected]["type"] != "text":
+            phone_answer = None
+            if expected == "policy_number" and re.match(r"^телефон\s*:", text, re.I):
+                phone_answer = normalize_slot("phone", re.sub(r"^телефон\s*:\s*", "", text, flags=re.I), catalog, as_of)
+            value = store_slot(state, "phone", phone_answer, "user") if phone_answer else store_slot(state, expected, text, "user")
             if value is not None:
                 state.update(expected_slot=None, next_node="identify", clarification_count=0)
             else:
@@ -167,6 +171,14 @@ def build_graph(catalog: Catalog, router: LLMRouter, action_engine: ActionEngine
             sid = item["scenario_id"]
             if sid in catalog.scenarios and sid != chosen and sid not in queue:
                 queue.append(sid)
+            if sid in catalog.scenarios and sid != chosen:
+                allowed_queued = set(catalog.scenarios[sid].slots.required + catalog.scenarios[sid].slots.optional)
+                snapshot = state["pending_scenario_slots"].setdefault(sid, {})
+                for name, raw_value in route["slots"].items():
+                    if name in allowed_queued:
+                        value = normalize_slot(name, raw_value, catalog, as_of)
+                        if value is not None:
+                            snapshot[name] = {"value": value, "source": "llm", "scenario_id": sid}
         allowed = set(catalog.scenarios[chosen].slots.required + catalog.scenarios[chosen].slots.optional) | {"iin", "phone"}
         for name, value in route["slots"].items():
             if name in allowed:
@@ -195,6 +207,12 @@ def build_graph(catalog: Catalog, router: LLMRouter, action_engine: ActionEngine
                     return _record(transfer(state), "identify", failed=True)
             elif "policy_number" not in spec.slots.required and "claim_number" not in spec.slots.required:
                 return _record(ask(state, "phone"), "identify")
+        if spec.requires_identification and state.get("client_id") and "policy_number" in spec.slots.required and not values.get("policy_number"):
+            result = invoke_action(state, "get_policies", {"client_id": state["client_id"]})
+            if "error" not in result:
+                active = [policy for policy in result["policies"] if policy["status"] == "active"]
+                if len(active) == 1:
+                    store_slot(state, "policy_number", active[0]["policy_number"], "identified_client")
         state["next_node"] = "collect_slots"
         return _record(state, "identify")
 

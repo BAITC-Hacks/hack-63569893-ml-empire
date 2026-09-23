@@ -21,6 +21,10 @@ def normalize_no(text, language=None):
 
 _DIGITS = dict(zip("ноль нуль один одна два две три четыре пять шесть семь восемь девять нөл бір екі үш төрт бес алты жеті сегіз тоғыз".split(),
                   "0 0 1 1 2 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9".split()))
+_PHONE_TENS = {"он": 10, "жиырма": 20, "отыз": 30, "қырық": 40, "елу": 50,
+               "алпыс": 60, "жетпіс": 70, "сексен": 80, "тоқсан": 90,
+               "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50,
+               "шестьдесят": 60, "семьдесят": 70, "восемьдесят": 80, "девяносто": 90}
 _ALIASES = {"алматы": "Almaty", "алмата": "Almaty", "астана": "Astana", "шымкент": "Shymkent",
             "караганда": "Karaganda", "қарағанды": "Karaganda", "актобе": "Aktobe", "ақтөбе": "Aktobe",
             "атырау": "Atyrau", "павлодар": "Pavlodar", "өскемен": "Oskemen", "усть-каменогорск": "Oskemen",
@@ -38,12 +42,33 @@ def normalize_slot(name, raw, catalog, as_of_date):
     if not value:
         return None
     if name == "phone":
+        value = re.sub(r"^телефон\s*:\s*", "", value, flags=re.I)
+        value = re.sub(r"[.,!?]+$", "", value).strip()
         tokens = re.findall(r"\w+", value.lower())
-        if any(token in _DIGITS for token in tokens):
-            if any(token not in _DIGITS and token not in {"плюс", "plus"} and not token.isdigit() for token in tokens):
-                return None
-            value = "+" + "".join(_DIGITS.get(token, token if token.isdigit() else "") for token in tokens)
+        if any(token in _DIGITS or token in _PHONE_TENS for token in tokens):
+            groups = re.split(r"[,;]", value.lower().replace("плюс", "").replace("plus", ""))
+            pieces = []
+            for group in groups:
+                words = re.findall(r"\w+", group)
+                if all(word in _DIGITS or word.isdigit() for word in words):
+                    pieces.append("".join(_DIGITS.get(word, word) for word in words))
+                elif any(word in {"жүз", "сто"} or word in _PHONE_TENS for word in words):
+                    number = 0
+                    for index, word in enumerate(words):
+                        if word in {"жүз", "сто"}:
+                            number += (int(_DIGITS[words[index - 1]]) if index and words[index - 1] in _DIGITS else 1) * 100
+                        elif word in _PHONE_TENS:
+                            number += _PHONE_TENS[word]
+                        elif word in _DIGITS and (index + 1 == len(words) or words[index + 1] not in {"жүз", "сто"}):
+                            number += int(_DIGITS[word])
+                        elif word not in _DIGITS:
+                            return None
+                    pieces.append(str(number))
+                else:
+                    return None
+            value = "+" + "".join(pieces)
         else:
+            value = re.sub(r"^(?:плюс|plus)\s*", "+", value, flags=re.I)
             value = re.sub(r"[\s()\-]", "", value)
         if len(value) == 11 and value.startswith("8"):
             value = "+7" + value[1:]

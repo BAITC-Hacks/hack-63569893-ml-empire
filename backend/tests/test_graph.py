@@ -58,6 +58,71 @@ async def test_urgent_multi_intent_keeps_queue(setup_graph):
 
 
 @pytest.mark.asyncio
+async def test_queued_scenarios_keep_their_own_supplied_slots(setup_graph):
+    from app.graph import run_turn
+    graph, engine = setup_graph(decision("SC33", "SC36", city="Almaty", phone="+77010000001", callback_time="завтра"))
+    first = await run_turn(graph, "queued", "1", "Где офис в Алматы? Перезвоните завтра на +77010000001")
+    assert first.status == "completed"
+    assert first.pending_scenarios == ["SC36"]
+    resumed = await run_turn(graph, "queued", "2", "Да")
+    assert resumed.status == "completed"
+    assert resumed.route.scenarios[0].scenario_id == "SC36"
+    assert engine.sessions["queued"].state["callbacks"][-1]["phone"] == "+77010000001"
+
+
+@pytest.mark.asyncio
+async def test_free_text_slot_answer_can_switch_to_urgent_intent(setup_graph):
+    from app.graph import run_turn
+    graph, _ = setup_graph(decision("SC28", policy_number="SQ-OGPO-104501"), decision("SC15", location="Turkey", incident_description="Fever"))
+    first = await run_turn(graph, "switch", "1", "Расторгнуть полис")
+    assert first.status == "collecting_slots"
+    second = await run_turn(graph, "switch", "2", "Мне плохо за границей")
+    assert second.route.source == "llm"
+    assert second.route.scenarios[0].scenario_id == "SC15"
+    assert second.status == "collecting_slots"
+    state = (await graph.aget_state({"configurable": {"thread_id": "switch"}})).values
+    assert state["active_scenario"] == "SC15"
+    assert state["suspended_scenarios"][-1]["active_scenario"] == "SC28"
+
+
+@pytest.mark.asyncio
+async def test_phone_identifies_unique_active_policy_for_cancellation(setup_graph):
+    from app.graph import run_turn
+    graph, engine = setup_graph(decision("SC28", language="kk", cancel_reason="Car sold"))
+    first = await run_turn(graph, "unique", "1", "Көлікті саттым, шартты бұзғым келеді")
+    assert first.status == "collecting_slots"
+    preview = await run_turn(graph, "unique", "2", "Телефон: плюс жеті, жеті жүз бір, нөл нөл нөл, нөл нөл, он.")
+    assert preview.status == "awaiting_confirmation"
+    assert preview.pending_confirmation["inputs"]["policy_number"] == "SQ-CASCO-204350"
+    assert not engine.sessions["unique"].completed
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_client_policies_still_ask_for_policy_number(setup_graph):
+    from app.graph import run_turn
+    graph, _ = setup_graph(decision("SC28", cancel_reason="Car sold"))
+    await run_turn(graph, "ambiguous", "1", "Расторгнуть полис")
+    result = await run_turn(graph, "ambiguous", "2", "Телефон: +77010000001")
+    assert result.status == "collecting_slots"
+    assert result.pending_confirmation is None
+    state = (await graph.aget_state({"configurable": {"thread_id": "ambiguous"}})).values
+    assert state["expected_slot"] == "policy_number"
+
+
+@pytest.mark.asyncio
+async def test_router_error_survives_public_turn_route(setup_graph):
+    from app.graph import run_turn
+    from types import SimpleNamespace
+    routed = decision("SYS_UNCLEAR")
+    routed = SimpleNamespace(language="ru", routing_error="router_unavailable",
+                             model_dump=lambda: {**routed.model_dump_base, "routing_error": "router_unavailable"},
+                             model_dump_base=routed.model_dump())
+    graph, _ = setup_graph(routed)
+    result = await run_turn(graph, "error", "1", "Не знаю")
+    assert result.route.routing_error == "router_unavailable"
+
+
+@pytest.mark.asyncio
 async def test_city_answer_continues_without_reroute(setup_graph):
     from app.graph import run_turn
     graph, _ = setup_graph(decision("SC33"))
@@ -165,6 +230,7 @@ async def test_spoken_phone_and_relative_date_normalized(setup_graph):
     assert normalize_slot("preferred_date", "завтра", catalog, "2026-10-01") == "2026-10-02"
     assert normalize_slot("incident_date", "вчера", catalog, "2026-10-01") == "2026-09-30"
     assert normalize_slot("preferred_date", "ертең", catalog, "2026-10-01") == "2026-10-02"
+    assert normalize_slot("phone", "Плюс 7 701 000 00 09.", catalog, "2026-10-01") == "+77010000009"
 
 
 @pytest.mark.asyncio
