@@ -4,10 +4,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from app.config import REQUIRED_DATA_FILES
-from app.domain import ActionSpec, ScenarioSpec
+from app.domain import ActionSpec, ScenarioSpec, SlotSpec, SystemIntentSpec
 
 
 @dataclass(frozen=True)
@@ -30,8 +30,10 @@ class Catalog:
 
         scenarios = TypeAdapter(list[ScenarioSpec]).validate_python(scenarios_json["scenarios"])
         actions = TypeAdapter(list[ActionSpec]).validate_python(actions_json["actions"])
-        slot_rows = TypeAdapter(list[dict]).validate_python(slots_json["slots"])
-        system_rows = TypeAdapter(list[dict]).validate_python(scenarios_json["system_intents"])
+        slot_rows = _validate_rows(slots_json["slots"], SlotSpec, "slots.json", "slots")
+        system_rows = _validate_rows(
+            scenarios_json["system_intents"], SystemIntentSpec, "scenarios.json", "system_intents"
+        )
         error_codes = TypeAdapter(dict[str, str]).validate_python(actions_json["error_codes"])
 
         scenario_specs = _unique_by(scenarios, "scenario_id", "scenarios.json")
@@ -74,6 +76,14 @@ def _read_json(path: Path) -> dict:
         raise FileNotFoundError(f"Catalog file is missing: {path}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid JSON in catalog file {path}: {exc}") from exc
+
+
+def _validate_rows(rows: list, model: type, filename: str, collection: str) -> list[dict]:
+    try:
+        validated = TypeAdapter(list[model]).validate_python(rows)
+    except ValidationError as exc:
+        raise ValueError(f"Invalid {filename} {collection}: {exc}") from exc
+    return [row.model_dump(exclude_none=True) for row in validated]
 
 
 def _unique_by(rows: list, field: str, filename: str) -> dict:
