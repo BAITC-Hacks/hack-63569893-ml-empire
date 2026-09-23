@@ -1,0 +1,21 @@
+# Only application build inputs enter the context. In particular, no .env files,
+# worktrees, Git metadata, host environments, frontend files, or test data.
+**
+!backend/
+!backend/Dockerfile
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/app/
+!backend/app/**
+!datas/
+!datas/scenarios.json
+!datas/slots.json
+!datas/actions.json
+!datas/knowledge_base.json
+!datas/mock_backend.json
+
+# These exclusions also apply inside the allowed application directory.
+**/.env*
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
