@@ -33,7 +33,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Compose reads the root `.env` and passes `OPENAI_API_KEY`, `ROUTER_MODEL`, and `FRONTEND_ORIGIN` to the backend at runtime. Credentials are not included in the image. The API is at `http://localhost:8000`, interactive docs at `http://localhost:8000/docs`. The frontend runs separately; the default allowed origin is `http://localhost:5173`.
+Compose reads the root `.env` and passes `OPENAI_API_KEY`, `ROUTER_MODEL`, `ROUTER_REASONING_EFFORT`, and `FRONTEND_ORIGIN` to the backend at runtime. Router reasoning effort defaults to `none`. Credentials are not included in the image. The API is at `http://localhost:8000`, interactive docs at `http://localhost:8000/docs`. The frontend runs separately; the default allowed origin is `http://localhost:5173`.
 
 Stop with `docker compose down`. Sessions and mock changes are in memory and disappear on restart. See the [Docker guide](backend/README.md#docker) for configuration and smoke checks.
 
@@ -47,3 +47,5 @@ uv run --project backend --env-file .env uvicorn app.main:app --app-dir backend 
 ```
 
 Set `OPENAI_API_KEY` in the root `.env` file or your environment for live routing and audio. The command above explicitly loads `.env`; it is not loaded automatically. If you only use exported environment variables, omit `--env-file .env`. The API is at `http://localhost:8000`; see the [backend guide](backend/README.md) for configuration, a text WebSocket example, and tests.
+
+The router uses compact provider output while preserving the public route decision fields. It defaults to `ROUTER_REASONING_EFFORT=none`; local runs can set `low` for comparison. TTS reuses its provider client and sends PCM as it arrives. For audio turns, `trace.updated` includes `latency_ms.post_stt_first_audio` after the first PCM WebSocket send, measured from validated final transcription; it is a server send metric, not audible playback. The [backend guide](backend/README.md#demo-data-and-limits) has live evaluator commands for model, effort, and latency comparisons. The implementation does not guarantee a 500 ms router time or 1.5-second playback start.

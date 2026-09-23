@@ -24,7 +24,7 @@ docker compose down
 
 No host Python or uv is needed for Docker startup. The image uses Python 3.13, installs locked production dependencies, and runs one Uvicorn worker as a non-root user. Compose makes the filesystem read-only except `/tmp`. The five required catalog JSON files are bundled in `/app/datas`; calls change only an in-memory copy. There is no database, persistent volume, or frontend container. Do not add workers or replicas: sessions and LangGraph checkpoints are local to one process and are lost on restart.
 
-Compose automatically reads the root `.env` for interpolation, with exported shell variables taking precedence. It passes only `OPENAI_API_KEY`, `ROUTER_MODEL`, and `FRONTEND_ORIGIN` into the container, plus the fixed `DATA_DIR=/app/datas`. All `.env` variants are excluded from the build context. Do not put keys into Docker build arguments, commit them, or share expanded `docker compose config` output. Runtime environment variables are still readable by administrators with access to the Docker daemon.
+Compose automatically reads the root `.env` for interpolation, with exported shell variables taking precedence. It passes `OPENAI_API_KEY`, `ROUTER_MODEL`, `ROUTER_REASONING_EFFORT`, and `FRONTEND_ORIGIN` into the container, plus the fixed `DATA_DIR=/app/datas`. All `.env` variants are excluded from the build context. Do not put keys into Docker build arguments, commit them, or share expanded `docker compose config` output. Runtime environment variables are still readable by administrators with access to the Docker daemon.
 
 The default published address is `127.0.0.1:8000`, for local use only. Set `BACKEND_PORT=8001` in `.env` or the shell to change the host port. Set `FRONTEND_ORIGIN` to the exact frontend origin if it differs from `http://localhost:5173`; the browser connects directly to the published HTTP/WS port. Apply changed environment values with `docker compose up -d` (a simple restart does not reload them). External deployment additionally needs an explicit network exposure policy, HTTPS/WSS, and authentication; this Compose file is a local demo setup.
 
@@ -44,10 +44,15 @@ The smoke helper needs host uv/Python (unlike normal container startup). It chec
 | --- | --- | --- |
 | `OPENAI_API_KEY` | Live router, speech transcription, and synthesis | Required for live provider calls |
 | `ROUTER_MODEL` | Structured scenario selection through OpenAI Responses | `gpt-6-sol` |
+| `ROUTER_REASONING_EFFORT` | Router reasoning effort (`none` or `low`) | `none` |
 | `FRONTEND_ORIGIN` | Allowed browser origin for CORS and WebSocket | `http://localhost:5173` |
 | `DATA_DIR` | Directory containing the startup catalog and mock backend JSON | Repository `datas/` |
 
 The audio adapters default to `gpt-live-transcribe` for speech recognition and `gpt-4o-mini-tts` with the `coral` voice for speech output. Provider credentials stay on the server. The test suite replaces providers with fakes and does not require an API key.
+
+The router requests a compact structured result from the provider, then expands and validates it before returning the existing `RouterDecision` and `route.decision` fields. It keeps the full catalog descriptions and exclusion rules in the prompt, supports multiple intents, and falls back to clarification on invalid results. Its default effort is `none`; set `ROUTER_REASONING_EFFORT=low` to compare the prior baseline. The route timeout is 15 seconds, with one provider retry and a 768-token output cap. Docker Compose forwards the effort setting from the environment and also defaults it to `none`.
+
+TTS keeps one lazily created provider client across turns and closes it at application shutdown. It streams PCM bytes as the provider delivers them, including chunks smaller than 4096 bytes, while keeping PCM16 samples whole. Audio is not stored by this adapter.
 
 For the non-Docker commands, the root `.env` file is loaded explicitly by `--env-file .env`. When using only exported environment variables, omit that flag. Neither the application nor the evaluation script loads `.env` automatically; Docker Compose handles its own `.env` interpolation as described above.
 
@@ -78,15 +83,20 @@ After `session.ready`, send this JSON frame, replacing `turn_id` with a fresh UU
 
 Read `route.decision`, `agent.text`, `trace.updated`, and `turn.complete` events. A confirmation is a new `turn.text` with a new `turn_id`; an `action.preview` never performs the action. The full event protocol and audio format are in the [frontend contract](../frontend/docs/frontend.md).
 
+When a turn sends audio, `trace.updated` includes `latency_ms.post_stt_first_audio`: milliseconds from validated final transcription to completion of the first WebSocket PCM send. For text turns, it starts at turn processing entry. `server_first_audio` still starts at turn processing entry, so it includes transcription on audio turns; `tts_first_audio` starts when synthesis begins. The new field is absent when no PCM is sent. These are server timings, not physical speaker playback; the browser's `playback.started` acknowledgement supplies a separate `client_first_audio_ms` when available.
+
 ## Demo data and limits
 
 `datas/` is read at startup and is not modified by calls. The mock backend uses `2026-10-01` as its fixed date, independent of the machine clock. Each call has an isolated in-memory copy of mock data and LangGraph checkpoint state. Restarting the process loses sessions and changes; run a single server process for the demo, with no worker replication or persistent storage.
 
-The dialogue tests use annotated turns from `datas/dialogs_sample.json` against the real graph, catalog, and action engine, with a fake router. They are integration checks, not a measured model accuracy score. For a live routing evaluation, when a provider key is available, run:
+The dialogue tests use annotated turns from `datas/dialogs_sample.json` against the real graph, catalog, and action engine, with a fake router. They are integration checks, not a measured model accuracy score. For a live routing evaluation with a provider key, run the same dev set at the default effort and then compare the `low` baseline:
 
 ```bash
-uv run --project backend --env-file .env python backend/scripts/evaluate_router.py --model gpt-6-sol
+uv run --project backend --env-file .env python backend/scripts/evaluate_router.py --model gpt-6-sol --effort none --concurrency 1 --output /tmp/router-sol-none.json
+uv run --project backend --env-file .env python backend/scripts/evaluate_router.py --model gpt-6-sol --effort low --concurrency 1 --output /tmp/router-sol-low.json
 ```
+
+Use `--model gpt-6-luna` for a model comparison, or `--concurrency 1` through `8` to measure a chosen workload. The evaluator prints catalog accuracy and router latency p50/p95 and count over 500 ms; the optional JSON output also records the maximum. That output contains dataset IDs, predictions, timings, and failure categories, not utterance transcripts. Evaluation aborts on routing errors by default; `--continue-on-error` records those cases as incorrect predictions. The first request is measured separately from the warm summary. Results depend on the provider and workload; neither a 500 ms router time nor 1.5-second audible playback is guaranteed.
 
 ## Live smoke verification — 2026-09-23
 
