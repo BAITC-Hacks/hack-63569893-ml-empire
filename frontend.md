@@ -1,6 +1,6 @@
 # Frontend: подключение к Voice Router
 
-Статус: согласованный контракт для будущей реализации. HTTP- и WebSocket-эндпоинты ниже ещё не созданы; план бэкенда находится в [backend implementation plan](docs/superpowers/plans/2026-09-23-voice-router-backend.md), общая схема — в [архитектуре](docs/voice-router-architecture.md).
+Статус: контракт для будущей реализации в каталоге `frontend/`. HTTP- и WebSocket-эндпоинты ниже ещё не созданы; план бэкенда находится в [backend implementation plan](docs/superpowers/plans/2026-09-23-voice-router-backend.md), общая схема — в [архитектуре](docs/voice-router-architecture.md).
 
 ## Что должен показывать интерфейс
 
